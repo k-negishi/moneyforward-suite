@@ -11,7 +11,7 @@ MoneyForward の操作を自動化するためのモノレポ。設計は [Money
 | Node.js | 22.12 以上（`.node-version` に `22` を記載。nodebrew 等で導入する。Vitest 5 の要求） |
 | pnpm | 12（`package.json` の `packageManager: pnpm@12.8.1` で固定。npm から導入する） |
 | モジュール方式 | ESM（`"type": "module"`）。TypeScript 7.0 の `module` / `moduleResolution` は `nodenext` |
-| バージョン強制 | `.npmrc` の `engine-strict=true` により、条件を満たさない Node では `pnpm install` が失敗する |
+| バージョン強制 | `pnpm-workspace.yaml` の `engineStrict: true` により、条件を満たさない Node では `pnpm install` が `ERR_PNPM_UNSUPPORTED_ENGINE` で失敗する（pnpm 12 は `.npmrc` の `engine-strict` を読まないため。`.npmrc` 側は npm 系ツール向けに残している） |
 
 `pnpm-lock.yaml` は commit 対象。依存の再現には lockfile を使う。
 
