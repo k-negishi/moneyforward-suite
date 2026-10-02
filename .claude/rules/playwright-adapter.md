@@ -3,7 +3,7 @@ paths:
   - "packages/adapter-moneyforward-playwright/**"
 ---
 
-# Playwright Adapter の制約（設計書 §20〜§22 / §34）
+# Playwright Adapter の制約（ADR-0017 / ADR-0018〜ADR-0020）
 
 - Page / Locator / Selector を core や呼び出し側へ漏らさない
 - Locator は role > accessible name > visible text > 安定属性 の順で選ぶ（位置依存の指定を禁止）

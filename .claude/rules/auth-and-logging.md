@@ -6,7 +6,7 @@ paths:
   - "apps/automation/**"
 ---
 
-# 認証・ログの制約（設計書 §27〜§34）
+# 認証・ログの制約（ADR-0011〜ADR-0017）
 
 - Secret / Cookie / Session Token / storageState / 金融明細 / HTML / DOM をログ・エラー・委譲メッセージに出さない
 - ログは allow-list した field のみを出力する（自由文字列をそのまま出さない）
