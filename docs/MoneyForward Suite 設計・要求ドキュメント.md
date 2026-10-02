@@ -1,8 +1,8 @@
-# MoneyForward Automation 設計・要求ドキュメント
+# MoneyForward Suite 設計・要求ドキュメント
 
 ## 1. 概要
 
-`MoneyForward Automation` は、MoneyForward MEを中心とした個人向け自動化処理を集約するシステムである。
+`MoneyForward Suite` は、MoneyForward MEを中心とした個人向け自動化処理を集約するシステムである。
 
 MoneyForward MEに関連する複数の自動化機能を、同一GitHub Repositoryで継続的に管理する。
 
@@ -17,7 +17,7 @@ MoneyForward MEに連携されたモバイルSuicaについて、ユーザーが
 将来的には以下のような機能を追加する可能性がある。
 
 ```text
-MoneyForward Automation
+MoneyForward Suite
 
 ├─ MoneyForward ME自動操作
 │  ├─ モバイルSuica更新
@@ -80,7 +80,7 @@ Independent Deployment Units
 
 **ヘキサゴナルアーキテクチャは必須要件とする。**
 
-初期のMoneyForward Automation Jobについては、
+初期のMoneyForward Suite Jobについては、
 
 ```text
 Modular Monolith
@@ -121,7 +121,7 @@ ApplicationごとにRuntimeを選択できることを必須とする。
 初期構成は以下を基本とする。
 
 ```text
-moneyforward-automation/
+moneyforward-suite/
 │
 ├─ apps/
 │   └─ automation/

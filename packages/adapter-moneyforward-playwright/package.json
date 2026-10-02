@@ -1,5 +1,5 @@
 {
-  "name": "@mf-automation/adapter-moneyforward-playwright",
+  "name": "@mf-suite/adapter-moneyforward-playwright",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,6 +12,6 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -p tsconfig.check.json",
-    "test": "vitest run --config ../../vitest.config.ts --project @mf-automation/adapter-moneyforward-playwright"
+    "test": "vitest run --config ../../vitest.config.ts --project @mf-suite/adapter-moneyforward-playwright"
   }
 }

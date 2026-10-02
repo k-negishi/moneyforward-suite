@@ -1,5 +1,5 @@
 {
-  "name": "@mf-automation/adapter-aws",
+  "name": "@mf-suite/adapter-aws",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,6 +12,6 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -p tsconfig.check.json",
-    "test": "vitest run --config ../../vitest.config.ts --project @mf-automation/adapter-aws"
+    "test": "vitest run --config ../../vitest.config.ts --project @mf-suite/adapter-aws"
   }
 }

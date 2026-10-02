@@ -181,7 +181,7 @@ importers:
 
   apps/automation:
     dependencies:
-      '@mf-automation/core':
+      '@mf-suite/core':
         specifier: workspace:*
         version: link:../../packages/core
 
