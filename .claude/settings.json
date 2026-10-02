@@ -20,5 +20,6 @@
       "mcp__playwright__browser_sessionstorage_get",
       "mcp__playwright__browser_sessionstorage_list"
     ]
-  }
+  },
+  "plansDirectory": ".claude/plans"
 }

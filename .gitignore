@@ -4,6 +4,9 @@
 # Claude Code の個人用ローカル設定（開発者ごとのマシン固有設定）
 .claude/settings.local.json
 
+# plan mode の計画ファイル（plansDirectory 設定でリポジトリ内に保存。セッションごとに生成される）
+.claude/plans/
+
 # Playwright MCP の出力（スクリーンショット等。金融情報を含み得るためコミットしない）
 .playwright-mcp/
 
