@@ -18,7 +18,8 @@
       "mcp__playwright__browser_localstorage_get",
       "mcp__playwright__browser_localstorage_list",
       "mcp__playwright__browser_sessionstorage_get",
-      "mcp__playwright__browser_sessionstorage_list"
+      "mcp__playwright__browser_sessionstorage_list",
+      "Read(./.local/**)"
     ]
   },
   "plansDirectory": ".claude/plans"

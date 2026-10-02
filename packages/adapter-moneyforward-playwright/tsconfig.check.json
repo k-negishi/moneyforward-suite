@@ -1,0 +1,11 @@
+{
+  // テスト込みの型検査用（emit なし・ビルド不要）。build 用の tsconfig.json とは別に持つ。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    // テストを含めるため、リポジトリルートまでを対象にする
+    "rootDir": "../.."
+  },
+  "include": ["src", "test"]
+}
