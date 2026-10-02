@@ -5,11 +5,11 @@
   "type": "module",
   "packageManager": "pnpm@12.8.1",
   "engines": {
-    "node": ">=22.12"
+    "node": "^22.20.0 || ^24.0.0 || >=26.0.0"
   },
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "pnpm -r --if-present run typecheck",
+    "typecheck": "tsc -b && pnpm -r --if-present run typecheck",
     "test": "vitest run",
     "clean": "tsc -b --clean && rm -rf apps/*/dist packages/*/dist"
   },

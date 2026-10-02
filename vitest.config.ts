@@ -16,13 +16,14 @@ const workspacePackageNames = [
 /**
  * `@mf-automation/*` を各 package のビルド済み dist ではなく src へ解決する。
  * package.json の exports は dist を指すため、ビルド前でもテストを実行できるようにする。
+ * 完全一致（RegExp）にするのは、文字列キーが前方一致で `@mf-automation/core/ports` の
+ * ような subpath import まで不正なパス（`.../src/index.ts/ports`）へ書き換えてしまうため。
+ * subpath は書き換えず、各 package の exports に従って解決させる。
  */
-const workspaceAlias: Record<string, string> = Object.fromEntries(
-  workspacePackageNames.map((packageName) => [
-    `@mf-automation/${packageName}`,
-    fileURLToPath(new URL(`./packages/${packageName}/src/index.ts`, import.meta.url)),
-  ]),
-)
+const workspaceAlias = workspacePackageNames.map((packageName) => ({
+  find: new RegExp(`^@mf-automation/${packageName}$`),
+  replacement: fileURLToPath(new URL(`./packages/${packageName}/src/index.ts`, import.meta.url)),
+}))
 
 /**
  * project の root は cwd 相対で解決されるため、この設定ファイル基準の絶対パスにする。

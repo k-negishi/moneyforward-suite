@@ -8,7 +8,7 @@ packages:
 # @types/node を Node 22 系の最新へ揃えるために必要な最小限の除外にとどめる。
 minimumReleaseAgeExclude:
   - '@types/node@22.20.5'
-# engines（Node >=22.12）を満たさない環境では install を失敗させる（実測で確認済み）。
+# engines（package.json の range。Node 22.20+ / 24.x / 26+）を満たさない環境では install を失敗させる（実測で確認済み）。
 # pnpm 12 は .npmrc の engine-strict を読まないため、pnpm での実効はこちらの設定になる
 # （package.json の engines を満たさない Node で ERR_PNPM_UNSUPPORTED_ENGINE になることを検証済み）。
 engineStrict: true

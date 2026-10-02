@@ -1,6 +1,8 @@
 ---
 paths:
   - "packages/security/**"
+  - "packages/adapter-moneyforward-playwright/**"
+  - "packages/adapter-aws/**"
   - "apps/automation/**"
 ---
 
