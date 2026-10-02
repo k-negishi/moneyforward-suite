@@ -13,7 +13,7 @@ description: このリポジトリの Git 規約と基本手順を定める。�
 
 - `feat/` は使わない（`feature/` に統一する）。Issue 番号は付けない。
 - `<slug>` は内容を表す英小文字の kebab-case。例: `feature/monorepo-foundation`
-- chore・fix など他種別のブランチは、現行どおり種別プレフィックスを付ける（例: `chore/plan-review-workflow`）。
+- chore・fix など他種別のブランチは、種別プレフィックスを付ける（例: `chore/plan-review-workflow`）。
 
 ## コミットメッセージ
 
