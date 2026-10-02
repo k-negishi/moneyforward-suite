@@ -8,7 +8,7 @@
     "rootDir": "../..",
     "paths": {
       // 依存 package は dist ではなく src へ解決する（ビルド前でも型検査できる）
-      "@mf-automation/core": ["../core/src/index.ts"]
+      "@mf-automation/core": ["../../packages/core/src/index.ts"]
     }
   },
   "include": ["src", "test"]
