@@ -1,6 +1,6 @@
 ---
 name: git
-description: このリポジトリの Git 規約と基本手順を定める。ブランチ作成・コミット・push・PR 作成・worktree 操作の前に必ず参照すること（「ブランチを切って」「コミットして」「PR を作って」等の依頼を含む）。ブランチ命名（feature/<slug>）、コミットメッセージ規約、検証→コミット→PR の流れ、並行セッションでの注意をまとめる。
+description: このリポジトリの Git 規約と基本手順を定める。ブランチ作成・コミット・push・PR 作成・worktree 操作の前に必ず参照すること（「ブランチを切って」「コミットして」「PR を作って」等の依頼を含む）。ブランチ命名（feature・fix・docs などの種別プレフィックス）、コミットメッセージ規約、検証→コミット→PR の流れ、並行セッションでの注意をまとめる。
 ---
 
 # Git 規約と基本手順
@@ -9,11 +9,21 @@ description: このリポジトリの Git 規約と基本手順を定める。�
 
 ## ブランチ命名
 
-機能開発ブランチは `feature/<slug>` の形式にする。履歴を見たときに種別と内容がすぐ分かる状態を保つため。
+ブランチ名は `<種別>/<slug>` の形式にし、変更の種類と内容が履歴からすぐ分かる状態を保つ。
 
+- 種別は変更の実態に合わせて選ぶ。`chore/` を既定値にしない。
+  - `feature/`: 機能の追加・変更。判断に迷ったらこれを使う。
+  - `fix/`: 不具合修正。
+  - `docs/`: ドキュメント・規約・スキル定義の変更。
+  - `refactor/`: 挙動を変えない構造改善（名称変更・整理など）。
+  - `chore/`: 依存更新など、他種別に当てはまらない定型的な保守のみ。
 - `feat/` は使わない（`feature/` に統一する）。Issue 番号は付けない。
-- `<slug>` は内容を表す英小文字の kebab-case。例: `feature/monorepo-foundation`
-- chore・fix など他種別のブランチは、種別プレフィックスを付ける（例: `chore/plan-review-workflow`）。
+- `<slug>` は内容を表す英小文字の kebab-case。例: `feature/monorepo-foundation`、`refactor/rename-to-moneyforward-suite`、`chore/bump-pnpm`。
+
+## ブランチの削除
+
+- マージ済みのブランチは、リポジトリ設定（`delete_branch_on_merge=true`）により GitHub 側で自動削除される。マージ後にリモートブランチが残っていた場合は `git push origin --delete <branch>` で削除する。
+- ローカルの作業ブランチは自動では消えないため、不要になったら `git branch -d <branch>` で削除する。
 
 ## コミットメッセージ
 
