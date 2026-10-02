@@ -24,5 +24,27 @@
 | # | タイトル | Status | Date |
 |---|---|---|---|
 | [0001](0001-adopt-adr.md) | 設計判断の記録に ADR を採用する | Accepted | 2026-10-03 |
-
-ADR-0002〜0025（旧設計書からの遡及記録）は #21 の移行で追加する。
+| [0002](0002-monorepo-application-boundaries.md) | モノレポと Application 境界の分離原則 | Accepted | 2026-10-03 |
+| [0003](0003-hexagonal-architecture.md) | ヘキサゴナルアーキテクチャを採用する（必須） | Accepted | 2026-10-03 |
+| [0004](0004-application-units-runtime-isolation.md) | Application 単位で分割し、Runtime・Deployment・Dependency を分離する | Accepted | 2026-10-03 |
+| [0005](0005-pnpm-workspace.md) | パッケージ管理に pnpm workspace を採用する | Accepted | 2026-10-03 |
+| [0006](0006-core-runtime-independence.md) | Core を Framework / Runtime 非依存に保つ | Accepted | 2026-10-03 |
+| [0007](0007-port-granularity.md) | Port は外部 Capability 単位で定義する（過剰抽象化の禁止） | Accepted | 2026-10-03 |
+| [0008](0008-composition-root.md) | Composition Root で依存を注入する | Accepted | 2026-10-03 |
+| [0009](0009-single-lambda-job-router.md) | 初期 Automation は Single Lambda + Job Router で構成する | Accepted | 2026-10-03 |
+| [0010](0010-no-generic-executor.md) | 汎用 Executor を禁止する（外部入力による任意操作の排除） | Accepted | 2026-10-03 |
+| [0011](0011-security-policy.md) | Security Policy を機能要件より優先する（Fail Closed 等） | Accepted | 2026-10-03 |
+| [0012](0012-manual-auth-session-reuse.md) | 認証は手動ログインとセッション再利用で行う | Accepted | 2026-10-03 |
+| [0013](0013-secret-isolation.md) | Secret を Application 単位で分離する | Accepted | 2026-10-03 |
+| [0014](0014-iam-per-application.md) | IAM Role を Application 単位で分離する | Accepted | 2026-10-03 |
+| [0015](0015-no-auth-challenge-bypass.md) | 認証チャレンジを自動回避しない | Accepted | 2026-10-03 |
+| [0016](0016-allow-list-logging.md) | ログを Allow List 方式にする | Accepted | 2026-10-03 |
+| [0017](0017-no-production-artifacts.md) | Production Artifact を恒常保存しない | Accepted | 2026-10-03 |
+| [0018](0018-moneyforward-adapter-boundary.md) | MoneyForward Adapter の境界を閉じる（Playwright を Core へ漏らさない） | Accepted | 2026-10-03 |
+| [0019](0019-semantic-locators.md) | Locator は意味ベースで選択する | Accepted | 2026-10-03 |
+| [0020](0020-verify-success-by-state-change.md) | 成功判定は状態変化で行う | Accepted | 2026-10-03 |
+| [0021](0021-retry-orchestration.md) | Retry と実行基盤（Step Functions・Lambda Timeout） | Accepted | 2026-10-03 |
+| [0022](0022-architecture-test.md) | Architecture Test で境界を検証する | Accepted | 2026-10-03 |
+| [0023](0023-monorepo-ci-affected-builds.md) | CI/CD をモノレポ対応（affected build）にする | Accepted | 2026-10-03 |
+| [0024](0024-iac-per-deployment-unit.md) | Infrastructure as Code を Deployment Unit 単位で管理する | Accepted | 2026-10-03 |
+| [0025](0025-external-system-boundaries.md) | 外部システム境界を Adapter で分離する（MoneyForward と PayPay） | Accepted | 2026-10-03 |

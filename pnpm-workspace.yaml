@@ -1,5 +1,5 @@
-# pnpm workspace の定義（設計書 §6）。Application（apps/*）と共有 package（packages/*）のみを対象にする。
-# 将来用の空 package は追加しない（設計書 §5）。
+# pnpm workspace の定義（ADR-0005）。Application（apps/*）と共有 package（packages/*）のみを対象にする。
+# 将来用の空 package は追加しない（ADR-0005）。
 packages:
   - apps/*
   - packages/*

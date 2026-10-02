@@ -44,12 +44,12 @@ corepack を使っていない環境では 1 行目は不要。`pnpm-lock.yaml` 
 - `packages/adapter-moneyforward-playwright`（`@mf-suite/adapter-moneyforward-playwright`）— MoneyForwardPort の Playwright 実装
 - `packages/adapter-aws`（`@mf-suite/adapter-aws`）— SecretStorePort の AWS 実装（PoC 後）
 
-将来用の空 Application・未使用 package は作らない（設計書 §5）。
+将来用の空 Application・未使用 package は作らない（[ADR-0005](docs/adr/0005-pnpm-workspace.md)）。
 
 ## 実装時の注意
 
 - 相対 import には `.js` 拡張子を付ける（ESM / NodeNext の解決規則）。package 間 import を追加したら、`tsconfig.json` の `references` と `tsconfig.check.json` の `paths`（tsconfig ファイルの位置基準）も更新する。
-- `packages/core` は Framework / Runtime 非依存。playwright / aws-sdk / appium 等を持ち込まない（設計書 §9 / §51）。
+- `packages/core` は Framework / Runtime 非依存。playwright / aws-sdk / appium 等を持ち込まない（[ADR-0006](docs/adr/0006-core-runtime-independence.md)）。
 - テストは各 package の `test/`（`src/` の外）に置く。ビルドに含まれず `dist` へ出ず、型検査は `tsconfig.check.json` が対象にする。`@mf-suite/*` の package 名 import は、テスト実行時に `vitest.config.ts` の alias で各 package の `src/index.ts` へ解決される（テストはビルド不要）。
 - Playwright のブラウザ取得（`pnpm exec playwright install chromium`）は、Playwright 依存を追加する PR2 のセットアップ手順で行う。
 - CLI を実行する script（例: `refresh-suica`）は `pnpm build` を前置する（ビルド忘れで古い `dist` を実行する事故を防ぐ。実装は PR2）。
@@ -57,4 +57,4 @@ corepack を使っていない環境では 1 行目は不要。`pnpm-lock.yaml` 
 ## 機密情報の取り扱い
 
 - 認証セッション等のローカル専用ファイルは `.local/` に置く。`.local/`・`.env*`（`.env.example` を除く）・Playwright の Artifact（`test-results/` / `playwright-report/` / `blob-report/`）は git 管理外。機密ページ（認証後・金融情報を含む画面）に対して Playwright MCP の filename 保存は使わない。
-- AI セッション・ログに Secret / Cookie / セッショントークン / 金融明細を載せない。`.claude/settings.json` の `.local/` deny は補助とし、運用（読ませない）を併用する。詳細は CLAUDE.md と設計書 §28〜§34 の方針。
+- AI セッション・ログに Secret / Cookie / セッショントークン / 金融明細を載せない。`.claude/settings.json` の `.local/` deny は補助とし、運用（読ませない）を併用する。詳細は CLAUDE.md と [ADR-0011〜ADR-0017](docs/adr/README.md)（Security Policy・認証・Secret・ログ・Artifact）の方針。
