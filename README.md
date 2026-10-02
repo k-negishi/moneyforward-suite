@@ -8,7 +8,7 @@ MoneyForward の操作を自動化するためのモノレポ。設計は [Money
 
 | 項目 | 方針 |
 |---|---|
-| Node.js | 22.12 以上（`.node-version` に `22` を記載。nodebrew 等で導入する。Vitest 5 の要求） |
+| Node.js | `^22.20.0 || ^24.0.0 || >=26.0.0`（package.json の `engines`。Vitest 5 の対応 range に合わせつつ、`@types/node ^22.20.5` が提供する型と実行環境の下限を揃える。Node 23 / 25 は非対応。`.node-version` に `22` を記載し、nodebrew 等で導入する） |
 | pnpm | 12（`package.json` の `packageManager: pnpm@12.8.1` で固定。npm から導入する） |
 | モジュール方式 | ESM（`"type": "module"`）。TypeScript 7.0 の `module` / `moduleResolution` は `nodenext` |
 | バージョン強制 | `pnpm-workspace.yaml` の `engineStrict: true` により、条件を満たさない Node では `pnpm install` が `ERR_PNPM_UNSUPPORTED_ENGINE` で失敗する（pnpm 12 は `.npmrc` の `engine-strict` を読まないため。`.npmrc` 側は npm 系ツール向けに残している） |
@@ -38,7 +38,7 @@ corepack の shim を使っていない環境では `corepack enable pnpm` は�
 | コマンド | 内容 |
 |---|---|
 | `pnpm build` | 全 package を TypeScript プロジェクト参照（`tsc -b`）でビルドする |
-| `pnpm typecheck` | 全 package の型検査。各 package の `tsc -p tsconfig.check.json`（テスト込み・emit なし・ビルド不要）を再帰実行する |
+| `pnpm typecheck` | 全 package の型検査。まず `tsc -b`（project references・workspace 依存・rootDir などのビルド診断。dist も生成する）を実行し、続けて各 package の `tsc -p tsconfig.check.json`（テスト込み・emit なし）を再帰実行する |
 | `pnpm test` | Vitest で全 workspace package のテストを実行する |
 | `pnpm test --project @mf-automation/automation` | 単一 project のテストだけを実行する |
 | `pnpm --filter @mf-automation/core build` | workspace 単位で実行する（各 package が `build` / `typecheck` / `test` を持つ） |
@@ -62,7 +62,7 @@ packages/
 ## 実装時の注意
 
 - ESM のため、相対 import には `.js` 拡張子が必要（NodeNext の解決規則）。
-- package 間 import を追加したら、その package の `tsconfig.json` の `references` に依存先を追加する（`tsc -b` のビルド順はここから決まる）。あわせて `tsconfig.check.json` の `paths` にも依存先のソース（`../<name>/src/index.ts`）を追加する（テスト込みの型検査は dist 不要でソースへ直接解決させるため）。
+- package 間 import を追加したら、その package の `tsconfig.json` の `references` に依存先を追加する（`tsc -b` のビルド順はここから決まる）。あわせて `tsconfig.check.json` の `paths` にも依存先のソースを追加する（`paths` は tsconfig ファイルの位置基準で解決されるため、apps/automation から packages/core を指す場合は `../../packages/core/src/index.ts`。テスト込みの型検査は dist 不要でソースへ直接解決させるため）。
 - `packages/core` は Framework / Runtime 非依存。playwright / aws-sdk / appium 等を持ち込まない（設計書 §9 / §51）。
 - テストは各 package の `test/`（`src/` の外）に置く。ビルド（`include: ["src"]`）に含まれず `dist` へ出ない。型検査は `tsconfig.check.json`（`include: ["src", "test"]`）が対象にする。
 - `@mf-automation/*` の package 名 import は、テスト実行時に `vitest.config.ts` の alias で各 package の `src/index.ts` へ解決される（テストはビルド不要）。
@@ -71,6 +71,7 @@ packages/
 
 ## 機密情報の取り扱い
 
-- 認証セッション等のローカル専用ファイルは `.local/` に置く（git 管理外。AI セッションは `.local/` を読まない）。
+- 認証セッション等のローカル専用ファイルは `.local/` に置く（git 管理外）。AI セッションからの読み取りは `.claude/settings.json` の `Read(./.local/**)` deny と CLAUDE.md の方針（読まない）で防ぐ。ただし deny パターンはセッション起動時の cwd 基準で解決されるため、サブディレクトリから起動したセッションではリポジトリ直下の `.local/` に一致しない場合がある。また Read ツール（および一部の Bash ファイルコマンド）経路のみの防止で、Bash での再帰的な読み出し・サブプロセス・MCP 経由には及ばない。運用（AI セッションに読ませない）を併用する。
 - `.env*` は git 管理外（`.env.example` のみ追跡可）。
 - Playwright の Artifact（`test-results/` / `playwright-report/` / `blob-report/`）は git 管理外。
+- Playwright MCP の `filename` を明示した保存（screenshot / console / snapshot 等）はリポジトリ直下へ `.png` / `.md` / `.json` 等を書き出す。機密ページ（認証後・金融情報を含む画面）に対しては filename 保存を使わない。`.gitignore` の拡張（`/*.md` 等）では将来の CHANGELOG 等を巻き込むため、運用で防ぐ。
