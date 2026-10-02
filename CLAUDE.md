@@ -5,7 +5,7 @@
 
 ## 参照資料
 
-実装や設計判断を行う前に、[MoneyForward Automation 設計・要求ドキュメント](<docs/MoneyForward Automation 設計・要求ドキュメント.md>)を確認する
+実装や設計判断を行う前に、[MoneyForward Suite 設計・要求ドキュメント](<docs/MoneyForward Suite 設計・要求ドキュメント.md>)を確認する
 
 ## 機密情報の取り扱い
 

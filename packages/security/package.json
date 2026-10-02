@@ -1,5 +1,5 @@
 {
-  "name": "@mf-automation/security",
+  "name": "@mf-suite/security",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,6 +12,6 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -p tsconfig.check.json",
-    "test": "vitest run --config ../../vitest.config.ts --project @mf-automation/security"
+    "test": "vitest run --config ../../vitest.config.ts --project @mf-suite/security"
   }
 }

@@ -14,14 +14,14 @@ const workspacePackageNames = [
 ] as const
 
 /**
- * `@mf-automation/*` を各 package のビルド済み dist ではなく src へ解決する。
+ * `@mf-suite/*` を各 package のビルド済み dist ではなく src へ解決する。
  * package.json の exports は dist を指すため、ビルド前でもテストを実行できるようにする。
- * 完全一致（RegExp）にするのは、文字列キーが前方一致で `@mf-automation/core/ports` の
+ * 完全一致（RegExp）にするのは、文字列キーが前方一致で `@mf-suite/core/ports` の
  * ような subpath import まで不正なパス（`.../src/index.ts/ports`）へ書き換えてしまうため。
  * subpath は書き換えず、各 package の exports に従って解決させる。
  */
 const workspaceAlias = workspacePackageNames.map((packageName) => ({
-  find: new RegExp(`^@mf-automation/${packageName}$`),
+  find: new RegExp(`^@mf-suite/${packageName}$`),
   replacement: fileURLToPath(new URL(`./packages/${packageName}/src/index.ts`, import.meta.url)),
 }))
 
@@ -43,7 +43,7 @@ export default defineConfig({
         root: projectRoot('./apps/automation'),
         resolve: { alias: workspaceAlias },
         test: {
-          name: '@mf-automation/automation',
+          name: '@mf-suite/automation',
         },
       },
       ...workspacePackageNames.map((packageName) => ({
@@ -51,7 +51,7 @@ export default defineConfig({
         root: projectRoot(`./packages/${packageName}`),
         resolve: { alias: workspaceAlias },
         test: {
-          name: `@mf-automation/${packageName}`,
+          name: `@mf-suite/${packageName}`,
         },
       })),
     ],

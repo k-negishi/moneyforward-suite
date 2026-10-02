@@ -1,5 +1,5 @@
 {
-  "name": "@mf-automation/automation",
+  "name": "@mf-suite/automation",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,9 +12,9 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -p tsconfig.check.json",
-    "test": "vitest run --config ../../vitest.config.ts --project @mf-automation/automation"
+    "test": "vitest run --config ../../vitest.config.ts --project @mf-suite/automation"
   },
   "dependencies": {
-    "@mf-automation/core": "workspace:*"
+    "@mf-suite/core": "workspace:*"
   }
 }
