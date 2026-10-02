@@ -2,5 +2,20 @@
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true
+  },
+  "permissions": {
+    "deny": [
+      "mcp__playwright__browser_run_code_unsafe",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_network_request",
+      "mcp__playwright__browser_file_upload",
+      "mcp__playwright__browser_storage_state",
+      "mcp__playwright__browser_cookie_get",
+      "mcp__playwright__browser_cookie_list",
+      "mcp__playwright__browser_localstorage_get",
+      "mcp__playwright__browser_localstorage_list",
+      "mcp__playwright__browser_sessionstorage_get",
+      "mcp__playwright__browser_sessionstorage_list"
+    ]
   }
 }
