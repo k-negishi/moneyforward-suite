@@ -21,5 +21,6 @@
       "mcp__playwright__browser_sessionstorage_list",
       "Read(./.local/**)"
     ]
-  }
+  },
+  "plansDirectory": ".claude/plans"
 }
