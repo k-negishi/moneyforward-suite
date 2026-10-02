@@ -48,7 +48,3 @@
 このワークフローは行動方針であり、強制実行する設定ではない。重要な制約は型・lint・依存境界テスト・CIで保証し、Hooksは必要になった部分だけ導入する。
 
 公式仕様の参照先：[サブエージェント](https://code.claude.com/docs/en/sub-agents)、[ローカルレビュー](https://code.claude.com/docs/en/code-review#review-a-diff-locally)、[Claudeによるレビュー起動](https://code.claude.com/docs/en/code-review#let-claude-start-the-review)。
-
-## Git 運用
-
-- Gitのコミットコメント（コミットメッセージ）は省略せず、日本語で何を変更したかだけでなく、変更の目的や理由が伝わるように具体的に記述する。
