@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -b && pnpm -r --if-present run typecheck",
+    "typecheck": "tsc -b && pnpm -r --if-present run typecheck && tsc -p tests/tsconfig.check.json",
     "test": "vitest run",
     "clean": "tsc -b --clean && rm -rf apps/*/dist packages/*/dist"
   },

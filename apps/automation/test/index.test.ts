@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 // packages/core/src/index.ts へ解決できること（テストがビルド不要で動くこと）を検証する。
 // 注意: alias は package 名を直接 src へ解決するため、「workspace 依存の宣言」そのものは
 // このテストでは検証できない（依存を削除してもテストは緑のまま。検出は `pnpm typecheck` の
-// `tsc -b` / `pnpm build` が担う）。PR2 で実 export が入れば assert も意味を持ち始める。
+// `tsc -b` / `pnpm build` が担う）。実 export が入れば assert も意味を持ち始める。
 import * as core from '@mf-suite/core'
 
 describe('workspace 配線の smoke test', () => {
