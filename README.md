@@ -8,9 +8,10 @@ MoneyForward の操作を自動化するためのモノレポ。設計は [Money
 
 | 項目 | 方針 |
 |---|---|
-| Node.js | 22（`.node-version` に `22` を記載。nodebrew 等で導入する） |
+| Node.js | 22.12 以上（`.node-version` に `22` を記載。nodebrew 等で導入する。Vitest 5 の要求） |
 | pnpm | 12（`package.json` の `packageManager: pnpm@12.8.1` で固定。npm から導入する） |
 | モジュール方式 | ESM（`"type": "module"`）。TypeScript 7.0 の `module` / `moduleResolution` は `nodenext` |
+| バージョン強制 | `.npmrc` の `engine-strict=true` により、条件を満たさない Node では `pnpm install` が失敗する |
 
 `pnpm-lock.yaml` は commit 対象。依存の再現には lockfile を使う。
 
@@ -37,7 +38,7 @@ corepack の shim を使っていない環境では `corepack enable pnpm` は�
 | コマンド | 内容 |
 |---|---|
 | `pnpm build` | 全 package を TypeScript プロジェクト参照（`tsc -b`）でビルドする |
-| `pnpm typecheck` | `build` と同じ。プロジェクト参照ビルドは型検査を内包し、増分ビルドで高速なため分けていない |
+| `pnpm typecheck` | 全 package の型検査。各 package の `tsc -p tsconfig.check.json`（テスト込み・emit なし・ビルド不要）を再帰実行する |
 | `pnpm test` | Vitest で全 workspace package のテストを実行する |
 | `pnpm test --project @mf-automation/automation` | 単一 project のテストだけを実行する |
 | `pnpm --filter @mf-automation/core build` | workspace 単位で実行する（各 package が `build` / `typecheck` / `test` を持つ） |
@@ -61,11 +62,12 @@ packages/
 ## 実装時の注意
 
 - ESM のため、相対 import には `.js` 拡張子が必要（NodeNext の解決規則）。
-- package 間 import を追加したら、その package の `tsconfig.json` の `references` に依存先を追加する（`tsc -b` のビルド順はここから決まる）。
+- package 間 import を追加したら、その package の `tsconfig.json` の `references` に依存先を追加する（`tsc -b` のビルド順はここから決まる）。あわせて `tsconfig.check.json` の `paths` にも依存先のソース（`../<name>/src/index.ts`）を追加する（テスト込みの型検査は dist 不要でソースへ直接解決させるため）。
 - `packages/core` は Framework / Runtime 非依存。playwright / aws-sdk / appium 等を持ち込まない（設計書 §9 / §51）。
-- テストは各 package の `src/**/*.test.ts` に置く。`tsc -b` の対象外とし `dist` へ出さない。
+- テストは各 package の `test/`（`src/` の外）に置く。ビルド（`include: ["src"]`）に含まれず `dist` へ出ない。型検査は `tsconfig.check.json`（`include: ["src", "test"]`）が対象にする。
 - `@mf-automation/*` の package 名 import は、テスト実行時に `vitest.config.ts` の alias で各 package の `src/index.ts` へ解決される（テストはビルド不要）。
 - Playwright のブラウザ取得（`pnpm exec playwright install chromium`）は、Playwright 依存を追加する PR2 のセットアップ手順で行う。
+- CLI を実行する script（例: `refresh-suica`）は `pnpm build` を前置する形にする（ビルド忘れで古い `dist` を実行する事故を防ぐ。実装は PR2）。
 
 ## 機密情報の取り扱い
 
