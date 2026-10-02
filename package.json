@@ -5,17 +5,18 @@
   "type": "module",
   "packageManager": "pnpm@12.8.1",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   },
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -b",
+    "typecheck": "pnpm -r --if-present run typecheck",
     "test": "vitest run",
     "clean": "tsc -b --clean && rm -rf apps/*/dist packages/*/dist"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
     "typescript": "^7.0.2",
+    "vite": "^8.3.2",
     "vitest": "^5.0.3"
   }
 }

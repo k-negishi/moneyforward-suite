@@ -1,0 +1,15 @@
+{
+  // テスト込みの型検査用（emit なし・ビルド不要）。build 用の tsconfig.json とは別に持つ。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    // テストと依存 package のソース（paths）を含むため、リポジトリルートまでを対象にする
+    "rootDir": "../..",
+    "paths": {
+      // 依存 package は dist ではなく src へ解決する（ビルド前でも型検査できる）
+      "@mf-automation/core": ["../core/src/index.ts"]
+    }
+  },
+  "include": ["src", "test"]
+}

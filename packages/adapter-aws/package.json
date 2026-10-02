@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -p tsconfig.check.json",
     "test": "vitest run --config ../../vitest.config.ts --project @mf-automation/adapter-aws"
   }
 }
