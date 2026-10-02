@@ -54,6 +54,15 @@ export default defineConfig({
           name: `@mf-suite/${packageName}`,
         },
       })),
+      {
+        // リポジトリ横断のポリシー検査（コメント規約の番号参照チェック）。
+        extends: true,
+        root: projectRoot('./tests'),
+        resolve: { alias: workspaceAlias },
+        test: {
+          name: 'repo-policy',
+        },
+      },
     ],
   },
 })

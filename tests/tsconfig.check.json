@@ -1,0 +1,15 @@
+{
+  // リポジトリ横断のポリシー検査テスト用（emit なし・ビルド不要）。
+  // build 用の tsconfig.json とは別に持つ（このディレクトリはビルド対象にしない）。
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    // workspace package は dist ではなく src へ解決する（ビルド前でも型検査できる）。
+    // ワイルドカード写像にして、package 追加時に列挙の更新が要らないようにする。
+    "paths": {
+      "@mf-suite/*": ["../packages/*/src/index.ts"]
+    }
+  },
+  "include": ["."]
+}
