@@ -1,5 +1,8 @@
 # AI エージェント向け指示
 
+## 基本方針
+- 必ず日本語を使うこと。中国語・韓国語は使わないこと。
+
 ## 参照資料
 
 実装や設計判断を行う前に、[MoneyForward Automation 設計・要求ドキュメント](<docs/MoneyForward Automation 設計・要求ドキュメント.md>)を確認する
