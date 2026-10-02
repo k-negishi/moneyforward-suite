@@ -14,3 +14,25 @@
 /*.webm
 /*.har
 /*.zip
+
+# Node.js / pnpm
+node_modules/
+
+# TypeScript のビルド生成物
+dist/
+*.tsbuildinfo
+
+# テスト・カバレッジ
+coverage/
+
+# 環境変数（.env.example のみ追跡する）
+.env*
+!.env.example
+
+# ローカル専用ファイル（認証セッション等。AI セッションは読まない）
+.local/
+
+# Playwright の Artifact（金融情報を含み得るためコミットしない）
+test-results/
+playwright-report/
+blob-report/

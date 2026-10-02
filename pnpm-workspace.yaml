@@ -1,0 +1,10 @@
+# pnpm workspace の定義（設計書 §6）。Application（apps/*）と共有 package（packages/*）のみを対象にする。
+# 将来用の空 package は追加しない（設計書 §5）。
+packages:
+  - apps/*
+  - packages/*
+# pnpm 12 の供給網ポリシー（minimumReleaseAge）により、公開直後のバージョンは既定で選択されない。
+# このエントリは pnpm が初回 install 時に自動追記した「明示的に許可した例外」。
+# @types/node を Node 22 系の最新へ揃えるために必要な最小限の除外にとどめる。
+minimumReleaseAgeExclude:
+  - '@types/node@22.20.5'

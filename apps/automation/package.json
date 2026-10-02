@@ -1,0 +1,20 @@
+{
+  "name": "@mf-automation/automation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "vitest run --config ../../vitest.config.ts --project @mf-automation/automation"
+  },
+  "dependencies": {
+    "@mf-automation/core": "workspace:*"
+  }
+}
