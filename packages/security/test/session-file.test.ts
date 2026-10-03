@@ -99,6 +99,16 @@ describe('session の保存と読込', () => {
     expect(result).toEqual({ status: 'OK', sessionState: syntheticSessionState })
   })
 
+  it('上書き保存は置換になり、古いセッションの値を残さない', () => {
+    const filePath = join(workDirectory, '.local', 'moneyforward-session.json')
+    saveSessionState(filePath, syntheticSessionState)
+    const replacement: SessionState = { cookies: [], origins: [] }
+
+    saveSessionState(filePath, replacement)
+
+    expect(readSessionFile(filePath)).toEqual({ status: 'OK', sessionState: replacement })
+  })
+
   it.skipIf(process.platform === 'win32')(
     '保存時にディレクトリを 0700・ファイルを 0600 にする',
     () => {

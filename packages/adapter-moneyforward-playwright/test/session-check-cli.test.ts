@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -184,28 +184,6 @@ describe('runSessionCheck', () => {
     expect(stdout).toEqual(['status=TEMPORARY_FAILURE'])
     expect(stdout.join('\n')).not.toContain(syntheticCookieValue)
     expect(stderr).toEqual([])
-  })
-
-  it('保存成功時の権限はファイル 0600・新規ディレクトリ 0700（CLI が経由する保存経路の固定）', () => {
-    // 権限の網羅（既存ファイルの締め直し・symlink 対策など）は security の session-file テストが担う。
-    // ここでは CLI が保存に使う saveSessionState の権限を 1 件だけ固定する。
-    const nestedDirectory = join(workDirectory, 'nested')
-    const nestedFilePath = join(nestedDirectory, 'moneyforward-session.json')
-
-    saveSessionState(nestedFilePath, syntheticSessionState)
-
-    expect(statSync(nestedDirectory).mode & 0o777).toBe(0o700)
-    expect(statSync(nestedFilePath).mode & 0o777).toBe(0o600)
-  })
-
-  it('上書きは置換で、古いセッションの値を残さない', () => {
-    saveSessionState(sessionFilePath, syntheticSessionState)
-    const replacement: SessionState = { cookies: [], origins: [] }
-
-    saveSessionState(sessionFilePath, replacement)
-
-    const result = readSessionFile(sessionFilePath)
-    expect(result).toEqual({ status: 'OK', sessionState: replacement })
   })
 
   it('どの出力にもセッションの値（Cookie の名前・値）を出さない', async () => {
