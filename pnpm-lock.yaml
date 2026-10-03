@@ -195,7 +195,11 @@ importers:
 
   packages/core: {}
 
-  packages/security: {}
+  packages/security:
+    dependencies:
+      '@mf-suite/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 
