@@ -46,4 +46,4 @@ Secret は Application ごとに分離し、不要な相互アクセスを許可
 
 - 取得に必要な権限は `secretsmanager:GetSecretValue` のみとし、`Resource` は対象 Secret の ARN に限定する（ワイルドカード・一覧取得・書き込み権限は与えない）。
 - Secret の識別子（名前・ARN）は設定から注入し、コードへ固定しない。取得した値はログ・エラーへ出さない（ADR-0016）。
-- 取得の失敗は分類して返し、欠如（SECRET_NOT_FOUND）・形式不正（SECRET_INVALID）・権限不足（ACCESS_DENIED）は再試行せず、一時障害（TEMPORARY_FAILURE）だけを再試行の対象にする（ADR-0021・ADR-0033）。
+- 取得の失敗は分類して返し、欠如（SECRET_NOT_FOUND）・形式不正・構成不備（SECRET_INVALID）・権限不足（ACCESS_DENIED）は再試行せず、一時障害（TEMPORARY_FAILURE）だけを再試行の対象にする（ADR-0021・ADR-0033）。

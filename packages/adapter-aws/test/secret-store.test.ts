@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { inspect } from 'node:util'
 
 import { GetSecretValueCommand } from '@aws-sdk/client-secrets-manager'
@@ -68,11 +69,15 @@ const readSecretValue = (result: Result<SecretValue>): string => {
 
 /**
  * 出力引数を検査用の文字列へ直列化する。オブジェクトを String で '[object Object]' に
- * 潰すと、値が含まれていても見逃すため JSON 化して中身まで検査する。JSON 化できない値
- * （循環参照・undefined 等）は inspect で構造を残す。
+ * 潰すと、値が含まれていても見逃すため JSON 化して中身まで検査する。Uint8Array（Buffer 含む）は
+ * 数値列に潰さず UTF-8 としてデコードする。JSON 化できない値（循環参照・undefined 等）は
+ * inspect で構造を残す。
  */
 const stringifyOutputArg = (arg: unknown): string => {
   if (typeof arg === 'string') return arg
+  if (arg instanceof Uint8Array) {
+    return Buffer.from(arg.buffer, arg.byteOffset, arg.byteLength).toString('utf8')
+  }
   if (arg instanceof Error) return `${arg.name}: ${arg.message}`
   try {
     return JSON.stringify(arg) ?? inspect(arg)
@@ -266,6 +271,19 @@ describe('AwsSecretsManagerSecretStore: Secret 値の非漏えい', () => {
 
     expect(output).not.toContain(SYNTHETIC_SECRET_VALUE)
     expect(output).not.toContain('合成の例外メッセージ')
+  })
+
+  it('Buffer の出力引数は数値列に潰さず UTF-8 としてデコードして検査する', () => {
+    const padded = Buffer.from(`prefix:${SYNTHETIC_SECRET_VALUE}:suffix`, 'utf8')
+    const view = padded.subarray(
+      'prefix:'.length,
+      'prefix:'.length + SYNTHETIC_SECRET_VALUE.length,
+    )
+
+    // 値は数値列（JSON の data）ではなく文字列として現れる。
+    expect(stringifyOutputArg(padded)).toContain(SYNTHETIC_SECRET_VALUE)
+    // byteOffset / byteLength を尊重し、view の範囲だけをデコードする。
+    expect(stringifyOutputArg(view)).toBe(SYNTHETIC_SECRET_VALUE)
   })
 
   it('成功値は実行時には生の文字列であり、直列化すると現れる（呼び出し側で出力しない前提の負の対照）', async () => {
