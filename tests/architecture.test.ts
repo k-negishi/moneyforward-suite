@@ -88,6 +88,8 @@ interface Violation {
 interface SpecifierReference {
   readonly specifier: string
   readonly line: number
+  /** 読み取り中にエスケープ（`\`）が現れたか。復号後の指定子を静的に検証できないため違反にする。 */
+  readonly hasEscape: boolean
 }
 
 /**
@@ -123,9 +125,10 @@ const isImportSpecifierContext = (recentTokens: readonly string[]): boolean => {
   const beforeLast = recentTokens.at(-2)
   const beforeBeforeLast = recentTokens.at(-3)
 
-  if (last === 'from' || last === 'import') return true
+  // `obj.from` のようなプロパティ参照に続くテンプレートは指定子ではない（`.` を挟む場合は import 構文ではない）。
+  if ((last === 'from' || last === 'import') && beforeLast !== '.') return true
 
-  // `x.require('...')` のようなメソッド呼び出しは対象外（`.` を挟む場合は import 指定子ではない）。
+  // `x.require('...')` のようなメソッド呼び出しも対象外（`.` を挟む場合は import 指定子ではない）。
   return last === '(' && (beforeLast === 'import' || beforeLast === 'require') && beforeBeforeLast !== '.'
 }
 
@@ -148,6 +151,8 @@ const isRegexLiteralStart = (recentTokens: readonly string[]): boolean => {
  * - 変数に組み立てた指定子（`require(name)` 等）は検出できない
  * - 補間（`${}`）を含むテンプレートリテラルの指定子は検出しない（補間の無いテンプレートは
  *   静的に決まるため、文字列リテラルと同じく指定子として読み取る）
+ * - エスケープ（`\`）を含む指定子は復号せず原文のまま記録し、違反として報告する（復号後の
+ *   値を静的に検証できないため）
  */
 const extractSpecifierReferences = (source: string): SpecifierReference[] => {
   const references: SpecifierReference[] = []
@@ -166,13 +171,16 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
     index += 1
 
     let value = ''
+    let hasEscape = false
     while (index < source.length) {
       const char = source[index]
       if (char === '\\') {
+        // エスケープは復号せず、原文のまま残す（指定子として使う場合は違反として報告する）。
+        hasEscape = true
         const escaped = source[index + 1] ?? ''
-        // エスケープが行継続（\ + 改行）のときは行番号を進める。
+        // 行継続（\ + 改行）のときは行番号を進める。
         if (escaped === '\n') line += 1
-        value += escaped
+        value += `\\${escaped}`
         index += 2
         continue
       }
@@ -187,7 +195,7 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
     }
 
     if (isImportSpecifierContext(recentTokens)) {
-      references.push({ specifier: value, line: startLine })
+      references.push({ specifier: value, line: startLine, hasEscape })
     }
     pushToken('string')
   }
@@ -250,13 +258,16 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
 
     let value = ''
     let hasInterpolation = false
+    let hasEscape = false
     while (index < source.length) {
       const char = source[index]
       if (char === '\\') {
+        // エスケープは復号せず、原文のまま残す（指定子として使う場合は違反として報告する）。
+        hasEscape = true
         const escaped = source[index + 1] ?? ''
-        // エスケープが行継続（\ + 改行）のときは行番号を進める。
+        // 行継続（\ + 改行）のときは行番号を進める。
         if (escaped === '\n') line += 1
-        value += escaped
+        value += `\\${escaped}`
         index += 2
         continue
       }
@@ -281,7 +292,7 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
     }
 
     if (!hasInterpolation && isImportSpecifierContext(recentTokens)) {
-      references.push({ specifier: value, line: startLine })
+      references.push({ specifier: value, line: startLine, hasEscape })
     }
     pushToken(hasInterpolation ? 'template' : 'string')
   }
@@ -452,7 +463,18 @@ const checkSource = (filePath: string, source: string): Violation[] => {
   const rule = ruleByUnit.get(unit)
   const violations: Violation[] = []
 
-  for (const { specifier, line } of extractSpecifierReferences(source)) {
+  for (const { specifier, line, hasEscape } of extractSpecifierReferences(source)) {
+    // エスケープを含む指定子は復号後の値を静的に検証できないため、fail closed で違反にする。
+    if (hasEscape) {
+      violations.push({
+        path: filePath,
+        line,
+        specifier,
+        reason: '指定子にエスケープを含む（復号後の指定子を静的に検証できないため許可しない）',
+      })
+      continue
+    }
+
     if (isRelativeSpecifier(specifier)) {
       if (escapesUnit(filePath, specifier)) {
         violations.push({
@@ -735,6 +757,24 @@ describe('依存規則の回帰テスト（合成ソース）', () => {
       expected: [],
     },
     {
+      name: 'Core: エスケープを含む指定子は復号せず違反として報告する',
+      filePath: 'packages/core/src/fixture.ts',
+      source: "import { chromium } from 'playwright/\\u002e\\u002e/@aws-sdk/client-secrets-manager'",
+      expected: ['playwright/\\u002e\\u002e/@aws-sdk/client-secrets-manager'],
+    },
+    {
+      name: '相対 import でもエスケープを含む指定子は違反にする',
+      filePath: 'packages/core/src/fixture.ts',
+      source: "import { x } from './ports\\u002fresult.js'",
+      expected: ['./ports\\u002fresult.js'],
+    },
+    {
+      name: 'Core: プロパティ参照の from / import に続くテンプレートは指定子として扱わない',
+      filePath: 'packages/core/src/fixture.ts',
+      source: 'const a = obj.from`playwright`\nconst b = obj.import`appium`\n',
+      expected: [],
+    },
+    {
       name: 'Core: playwright / aws-sdk / appium への依存を検出する',
       filePath: 'packages/core/src/fixture.ts',
       source: [
@@ -897,6 +937,21 @@ describe('依存規則の回帰テスト（合成ソース）', () => {
 
     expect(checkSource('packages/core/src/fixture.ts', source)).toMatchObject([
       { line: 3, specifier: 'playwright' },
+    ])
+  })
+
+  it('エスケープを含む指定子は復号せず違反として報告する', () => {
+    // Adapter では playwright が許可されるため、`.` / `..` の規則では捕まらない形でエスケープだけを検証する。
+    const violations = checkSource(
+      'packages/adapter-moneyforward-playwright/src/fixture.ts',
+      "import { chromium } from 'playwright/\\u002e/utils.js'",
+    )
+
+    expect(violations).toMatchObject([
+      {
+        specifier: 'playwright/\\u002e/utils.js',
+        reason: '指定子にエスケープを含む（復号後の指定子を静的に検証できないため許可しない）',
+      },
     ])
   })
 
