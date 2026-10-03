@@ -86,15 +86,18 @@ const forbiddenPatterns: readonly RegExp[] = [
  *
  * 1 つ目は `uses:` に続く保存 Action の参照（大文字小文字は問わない）を検出する。
  * 2 つ目は `uses:` の値が同一行のプレーンスカラーでない記法（`>-` / `|` / コメントのみ /
- * 値なし）を検出する。値が次行以降にあっても YAML としては解決され得るため、これを許すと
- * 行単位の検査をすり抜けて保存 Action を参照できてしまう。参照の 1 行表記に正当な用途はない。
+ * 値なし、`!` `&` `*` で始まるタグ・アンカー・エイリアス）を検出する。値や参照が同一行に
+ * なくても、デコレーションを挟んでも YAML としては解決され得るため、これを許すと行単位の
+ * 検査をすり抜けて保存 Action を参照できてしまう。`uses:` の直後にこれらで始まる正当な
+ * Action 参照は存在しない。
  *
- * 検査は行単位の best-effort で、YAML アンカー/エイリアス（`uses: *ref`）による間接参照、
- * `run:` ステップ内での送出、別名・ラッパーなど未知の Action は防げない。レビューで補う。
+ * 検査は行単位の best-effort。別行で定義したアンカーを参照する間接参照、引用符内の
+ * エスケープやインラインデコレーション（`\x61` 等）による難読化、`run:` ステップ内での
+ * 送出、別名・ラッパーなど未知の Action は防げない。レビューで補う。
  */
 const forbiddenWorkflowPatterns: readonly RegExp[] = [
   /uses\s*:\s*\S*upload-artifact/i,
-  /uses\s*:\s*(?:[>|]|#|$)/,
+  /uses\s*:\s*(?:[>|#&*!]|$)/,
 ]
 
 interface Violation {
@@ -300,6 +303,9 @@ describe('保存 Action の禁止パターン（誤検出・検出漏れの回�
     ['      - uses: |', true], // literal スカラー
     ['      - uses:', true], // 値が同一行にない
     ['      - uses: # 値は次行に書く', true], // コメントのみで値が同一行にない
+    ['      - uses: !!str |', true], // タグ（!!str）付きの literal スカラー
+    ['      - uses: &x >-', true], // アンカー（&x）付きの folded スカラー
+    ['      - uses: *ref', true], // エイリアス（別行で定義したアンカーを参照する記法）
     ['        actions/upload-artifact@v4', false], // 値の行だけでは検出しない（上の行で止める）
     // 検出しない（保存以外の Action の参照、保存 Action を指さないコメント・run: 内の文字列）
     ['# upload-artifact による保存は行わない（方針のメモ）', false],
