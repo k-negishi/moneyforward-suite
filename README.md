@@ -89,7 +89,7 @@ pnpm refresh-accounts --headed    # ブラウザを表示して実行する
 
 引数は `--headed` / `--headless` だけを受け付ける。未知のフラグ・値付き・重複・位置引数は拒否し、終了コード 64 で停止する（URL・Selector・JavaScript・Shell Command・ID / Password は受け付けない）。セッションの保存先は session CLI と同じ（`MF_SESSION_FILE` の絶対パス、既定は `.local/`）。再試行・待機は CLI では行わない（実行基盤の責務）。
 
-stdout は `status=...`（失敗時は `errorCode=...` を続ける）の 1 行だけとし、stderr には使い方の案内（不正入力時）と構造化ログ（allow list の field だけの JSON 行。実行の開始と完了の 2 行）を出す。stdout を契約の専有に保ち、ログと結果が混ざらないようにする。Cookie・セッショントークン・金融明細はどの出力にも含めない。状態と終了コードは次のとおり。
+stdout は `status=...`（失敗時は `errorCode=...` を続ける）の 1 行だけとし、stderr には使い方の案内（不正入力時）と構造化ログ（allow list の field だけの JSON 行）を出す。構造化ログは Use Case を実行した場合の開始と完了の 2 行で、Use Case に到達しない失敗（`SESSION_MISSING` / `SESSION_INVALID` / `INVALID_JOB`）では出力しない。stdout を契約の専有に保ち、ログと結果が混ざらないようにする。Cookie・セッショントークン・金融明細はどの出力にも含めない。状態と終了コードは次のとおり。
 
 | status | errorCode | 終了コード | 意味と対処 |
 |---|---|---|---|

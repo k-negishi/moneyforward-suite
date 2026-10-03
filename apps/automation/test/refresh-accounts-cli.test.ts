@@ -13,6 +13,7 @@ import type {
 } from '@mf-suite/core'
 import { isErrorCode } from '@mf-suite/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { writeStructuredLogToStderr } from '../src/cli/log-sink.js'
 import type {
   RefreshAccountsCliDependencies,
   RefreshAccountsCliOptions,
@@ -24,7 +25,6 @@ import {
   REFRESH_ACCOUNTS_USAGE,
   runRefreshAccounts,
   toExitCode,
-  writeStructuredLogToStderr,
 } from '../src/cli/refresh-accounts-cli.js'
 import { createLocalAutomation } from '../src/composition-root.js'
 

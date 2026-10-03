@@ -1,6 +1,5 @@
 import type { ApplicationResult, ErrorCode, RefreshAccountsStatus } from '@mf-suite/core'
 import { isErrorCode } from '@mf-suite/core'
-import type { LogSink } from '@mf-suite/security'
 
 import type { AutomationHandler } from '../handler.js'
 
@@ -12,16 +11,6 @@ import type { AutomationHandler } from '../handler.js'
  * stderr は使い方の案内（不正入力時）と構造化ログ（allow list の field だけの JSON 行）。
  * Secret・Cookie・金融情報は出力しない。
  */
-
-/**
- * 構造化ログを stderr へ 1 行ずつ書く sink。stdout は status 行の専有に保ち、
- * 運用時のログ（JSON 行）と契約（status 行）が混ざらないようにする。
- * 出力する field は構造化ロガーの allow list（timestamp / application / job / status /
- * attempt / durationMs / errorCode）に限られる。
- */
-export const writeStructuredLogToStderr: LogSink = (jsonLine) => {
-  process.stderr.write(`${jsonLine}\n`)
-}
 
 /** CLI が受け付けるオプション。ブラウザの表示方法だけを選べる（allow list の語彙）。 */
 export interface RefreshAccountsCliOptions {
