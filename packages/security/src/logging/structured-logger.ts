@@ -77,10 +77,11 @@ const isNonNegativeInteger = (value: unknown): value is number =>
  * イベントから出力オブジェクトを組む。許可 field を 1 つずつ取り出し、
  * 成功時（errorCode なし）は errorCode の key 自体を作らない。
  *
- * field ごとに値を実行時検証し、1 つでも違反したら null を返す（呼び出し側は出力しない）。
- * 型で守れない経路（キャスト・JS からの利用）で job / status に語彙外の自由文字列が混入しても、
- * attempt / durationMs にオブジェクト（toJSON 持ちを含む）や非整数が混入しても、
- * 生の値が出力へ流れる経路を断つ（Fail Closed。errorCode の丸めだけが意図的な非対称）。
+ * field ごとに値を一度だけ読み、その値で実行時検証し、1 つでも違反したら null を返す
+ * （呼び出し側は出力しない）。型で守れない経路（キャスト・JS からの利用）で job / status に
+ * 語彙外の自由文字列が混入しても、attempt / durationMs にオブジェクト（toJSON 持ちを含む）や
+ * 非整数が混入しても、生の値が出力へ流れる経路を断つ
+ * （Fail Closed。errorCode の丸めだけが意図的な非対称）。
  */
 const toRecord = (
   application: LogApplication,
@@ -90,32 +91,41 @@ const toRecord = (
   if (typeof event !== 'object' || event === null) return null
 
   const fields = event as Record<string, unknown>
-  if (fields.application !== application) return null
-  if (!isLogJob(fields.job)) return null
-  if (!isLogStatus(fields.status)) return null
-  if (!isPositiveInteger(fields.attempt)) return null
-  if (!isNonNegativeInteger(fields.durationMs)) return null
+  // 各 field は一度だけローカルへ読む。検証と出力にはこの同じローカルの値だけを使い、
+  // getter 持ちイベントで「検証時と出力時で別の値が返る」すり抜け（TOCTOU）を断つ。
+  const eventApplication = fields.application
+  const job = fields.job
+  const status = fields.status
+  const attempt = fields.attempt
+  const durationMs = fields.durationMs
+  const rawErrorCode = fields.errorCode
 
-  const errorCode = normalizeErrorCode(fields.errorCode)
+  if (eventApplication !== application) return null
+  if (!isLogJob(job)) return null
+  if (!isLogStatus(status)) return null
+  if (!isPositiveInteger(attempt)) return null
+  if (!isNonNegativeInteger(durationMs)) return null
+
+  const errorCode = normalizeErrorCode(rawErrorCode)
 
   if (errorCode === undefined) {
     return {
       timestamp,
       application,
-      job: fields.job,
-      status: fields.status,
-      attempt: fields.attempt,
-      durationMs: fields.durationMs,
+      job,
+      status,
+      attempt,
+      durationMs,
     }
   }
 
   return {
     timestamp,
     application,
-    job: fields.job,
-    status: fields.status,
-    attempt: fields.attempt,
-    durationMs: fields.durationMs,
+    job,
+    status,
+    attempt,
+    durationMs,
     errorCode,
   }
 }

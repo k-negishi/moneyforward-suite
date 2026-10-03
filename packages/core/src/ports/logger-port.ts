@@ -51,7 +51,15 @@ export interface LogEvent {
   readonly application: LogApplication
   readonly job: LogJob
   readonly status: LogStatus
+  /**
+   * job の試行回数。1 起点の整数でなければならない。0 以下・非整数・NaN・数値以外の
+   * イベントは Logger の実装が無言で落とす（Fail Closed）。
+   */
   readonly attempt: number
+  /**
+   * 所要時間（ミリ秒）。0 以上の整数でなければならない。負数・非整数・NaN・数値以外の
+   * イベントは Logger の実装が無言で落とす（Fail Closed）。
+   */
   readonly durationMs: number
   /** 失敗の分類。成功時は持たない。 */
   readonly errorCode?: ErrorCode

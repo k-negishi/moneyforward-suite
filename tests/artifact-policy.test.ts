@@ -10,11 +10,14 @@ import { describe, expect, it } from 'vitest'
  * 実行時の抑止（launch / context の options builder とそのテスト）も必要で、
  * この静的な検査はその二重防御の 1 層。
  *
- * 検出するのはソース中の直接の記述（object option とその引用キー、tracing.start /
- * screenshot 呼び出し、tracesDir 指定）だけ。変数へ組み立てて渡す場合、プロパティ代入
- * （`options.trace = 'on'`）、ラッパー越しの設定、将来 `playwright.config.*` へ集約する形は
- * 検出対象外（等価な書き方を網羅できないため、出現した時点で走査対象とパターンの追加を
- * 検討し、それまではレビューで補う）。
+ * 検出するのはソース中の直接の記述（object option とその引用キー・computed key・
+ * テンプレートキー・省略記法、tracing の start / stop 系呼び出し、`.screenshot(`、
+ * tracesDir 指定）だけ。変数へ組み立てて渡す場合、プロパティ代入（`options.trace = 'on'`）、
+ * ラッパー越しの設定、将来 `playwright.config.*` へ集約する形は検出対象外（等価な書き方を
+ * 網羅できないため、出現した時点で走査対象とパターンの追加を検討し、それまではレビューで補う）。
+ * 分割代入（`const { trace } = options`）はキー位置と同形のため一部は検出側に残る
+ * （単純な形は閉じ `}` の直後の `=` で除外する。入れ子の分割代入・関数引数の分割代入は
+ * 検出側に倒す）。
  */
 
 /** リポジトリのルート。cwd に依存せず、このテストファイルの位置（tests/）から解決する。 */
@@ -121,10 +124,11 @@ const readStringLiteral = (line: string, start: number): string | null => {
 const nextCodeChar = (line: string, start: number): string => line[skipSpaces(line, start)] ?? ''
 
 /**
- * `tracing.start(`（プロパティアクセスと空白を許容）の並びかを判定する。
- * tracing の開始呼び出しは Trace 保存の有効化意図として扱う。
+ * `tracing.start(` / `tracing.startChunk(` / `tracing.stop(` のような tracing の
+ * 保存系呼び出し（start / stop で始まるメソッド + `(`）かを判定する。
+ * 開始・停止のどちらか一方だけの記述も有効化の途中経過として検出側に倒す。
  */
-const isTracingStartCall = (line: string, start: number): boolean => {
+const isTracingSaveCall = (line: string, start: number): boolean => {
   const dot = skipSpaces(line, start)
   if (line[dot] !== '.') return false
 
@@ -133,9 +137,60 @@ const isTracingStartCall = (line: string, start: number): boolean => {
 
   let end = nameStart + 1
   while (end < line.length && isIdentifierPart(line[end] as string)) end += 1
-  if (line.slice(nameStart, end) !== 'start') return false
+  const method = line.slice(nameStart, end)
+  if (!method.startsWith('start') && !method.startsWith('stop')) return false
 
   return nextCodeChar(line, end) === '('
+}
+
+/**
+ * キー位置の `[` の直後を読み、computed key（['trace']: 'on'）なら有効化数 1 を返す。
+ * 文字列キーが `]` と `:` に続く形だけを対象にする（キー位置かは呼び出し側で判定する）。
+ */
+const readComputedKeyCount = (line: string, start: number): number => {
+  const literalStart = skipSpaces(line, start)
+  const literal = readStringLiteral(line, literalStart)
+  if (literal === null || !optionNames.has(literal)) return 0
+
+  const bracket = skipSpaces(line, skipStringLiteral(line, literalStart))
+  if (line[bracket] !== ']') return 0
+
+  const colon = skipSpaces(line, bracket + 1)
+  if (line[colon] !== ':') return 0
+
+  const valueLiteral = readStringLiteral(line, skipSpaces(line, colon + 1))
+  return toggleOptionNames.has(literal) && valueLiteral === 'off' ? 0 : 1
+}
+
+/**
+ * 位置 fromIndex 以降の閉じ `}` の直後が代入の `=` なら、分割代入のターゲット
+ * （const { trace: x } = options / const { trace } = options）とみなす。
+ * その形はキー位置と同形のため、オブジェクト生成から除外するために使う（best-effort。
+ * 入れ子の分割代入や関数引数の分割代入（function f({ trace })）など、`}` の後ろが
+ * `=` でない形は検出側に倒す）。
+ */
+const isDestructuringTarget = (line: string, fromIndex: number): boolean => {
+  const close = line.indexOf('}', fromIndex)
+  if (close === -1) return false
+
+  const afterIndex = skipSpaces(line, close + 1)
+  return (
+    line[afterIndex] === '=' && line[afterIndex + 1] !== '=' && line[afterIndex + 1] !== '>'
+  )
+}
+
+/**
+ * 省略記法のキー（{ trace } / { trace, video }）かを判定する。キー位置（直前のコード文字が
+ * `{` か `,`）の識別子で、直後が `,` / `}` のものを有効化として扱う（分割代入は除外する）。
+ */
+const isShorthandOptionKey = (line: string, nameEnd: number, lastCodeChar: string): boolean => {
+  if (!isObjectKeyPosition(lastCodeChar)) return false
+
+  const nextIndex = skipSpaces(line, nameEnd)
+  const next = line[nextIndex] ?? ''
+  if (next !== ',' && next !== '}') return false
+
+  return !isDestructuringTarget(line, nextIndex)
 }
 
 /**
@@ -223,6 +278,16 @@ const scanLine = (line: string, initial: ScanCarryState): LineScanResult => {
         template = true
         return result()
       }
+      const content = line.slice(i + 1, end - 1)
+      // テンプレートキー（{ `trace`: 'on' }）の検出。補間（${...}）を含む場合は動的なため
+      // 対象外。キー位置と直後の `:` の両方を見て、三項演算子などの誤検出を抑える。
+      if (!content.includes('${') && isObjectKeyPosition(lastCodeChar) && optionNames.has(content)) {
+        const colon = skipSpaces(line, end)
+        if (line[colon] === ':') {
+          const valueLiteral = readStringLiteral(line, skipSpaces(line, colon + 1))
+          if (!(toggleOptionNames.has(content) && valueLiteral === 'off')) count += 1
+        }
+      }
       lastCodeChar = '`'
       i = end
       continue
@@ -255,23 +320,35 @@ const scanLine = (line: string, initial: ScanCarryState): LineScanResult => {
         if (line[colon] === ':') {
           const valueStart = skipSpaces(line, colon + 1)
           const literal = readStringLiteral(line, valueStart)
+          // 分割代入のリネーム（const { trace: x } = options）は値が変数でもオブジェクト
+          // 生成ではないため除外する（文字列値の分割代入は成立しないため対象は literal なしに限る）。
+          const isDestructuringRename = literal === null && isDestructuringTarget(line, valueStart)
           // 'off' の明示があるときだけ無効化とみなし、それ以外（'on' 等のリテラル・変数・式・
           // 行末で値が続く場合）は有効化として扱う（見逃しより誤検出側へ倒す）。
           // recordHar / recordVideo は値に path / dir を要求するため、記述があれば常に有効化。
-          if (!(toggleOptionNames.has(name) && literal === 'off')) count += 1
+          if (!isDestructuringRename && !(toggleOptionNames.has(name) && literal === 'off')) {
+            count += 1
+          }
         }
       }
 
       // options を経ない直接 API 形の検出（保存を有効化する呼び出し・設定）。
-      if (name === 'tracing' && isTracingStartCall(line, end)) count += 1
+      if (name === 'tracing' && isTracingSaveCall(line, end)) count += 1
       else if (name === 'screenshot' && lastCodeChar === '.' && nextCodeChar(line, end) === '(') {
         count += 1
       } else if (name === 'tracesDir') count += 1
+
+      // 省略記法（{ trace }）の検出。
+      if (optionNames.has(name) && isShorthandOptionKey(line, end, lastCodeChar)) count += 1
 
       lastCodeChar = name
       i = end
       continue
     }
+
+    // computed key（{ ['trace']: 'on' }）の検出。キー位置の `[` からだけ読むことで、
+    // 三項演算子の配列リテラル（cond ? ['trace'] : ...）を誤検出しない。
+    if (ch === '[' && isObjectKeyPosition(lastCodeChar)) count += readComputedKeyCount(line, i + 1)
 
     // 空白は「直前のコード文字」ではないため、キー位置の判定用には記録しない。
     if (ch !== ' ' && ch !== '\t') lastCodeChar = ch
@@ -368,7 +445,14 @@ describe('有効化設定の検出パターン（誤検出・検出漏れの回�
     [`const options = { 'recordHar': { path: 'session.har' } }`, true],
     ['const options = { tracesDir: tracesPath }', true], // Trace の配置先指定
     ['await context.tracing.start({ screenshots: true, snapshots: true })', true], // 直接 API 形
+    ['await context.tracing.startChunk()', true], // start 系の別メソッド
+    ['await context.tracing.stop({ path: tracePath })', true], // stop 系（保存の実体）
     ['await page.screenshot({ path: shotPath })', true], // 直接 API 形
+    ['const options = { trace }', true], // 省略記法（値の変数は検証不能のため有効化として扱う）
+    ['const options = { video, screenshot }', true],
+    ['const options = { recordHar }', true],
+    [`const options = { ['trace']: 'on' }`, true], // computed key
+    ['const options = { `trace`: `on` }', true], // テンプレートキー
     // 検出しない（明示的な無効化・コメント・文字列・無関係な識別子）
     [`await browser.newContext({ trace: 'off' })`, false],
     [`await browser.newContext({ video: 'off' })`, false],
@@ -391,6 +475,14 @@ describe('有効化設定の検出パターン（誤検出・検出漏れの回�
     ["const note = 'tracesDir は使わない'", false], // 文字列リテラルの中身
     ['// context.tracing.start() はしない（方針のメモ）', false], // コメント内の言及
     ['// page.screenshot() はしない（方針のメモ）', false],
+    ['const { trace } = options', false], // 分割代入（オブジェクト生成ではない）
+    ['const { trace, video } = options', false],
+    ['const { trace: traceValue } = options', false], // 分割代入のリネーム
+    ['const kind = flag ? [\'trace\'] : [\'video\']', false], // 三項演算子の配列リテラル
+    ['const kind = flag ? `trace` : `video`', false], // 三項演算子のテンプレート
+    ['await context.tracing.startChunk', false], // 呼び出しではない（`(` が無い）
+    [`const options = { ['trace']: 'off' }`, false], // computed key + 明示的な無効化
+    ['const options = { `video`: `off` }', false], // テンプレートキー + 明示的な無効化
   ]
 
   it.each(cases)('%s → %s', (line, expected) => {
@@ -432,6 +524,19 @@ describe('有効化設定の検出パターン（誤検出・検出漏れの回�
     const lines = ['const kind =', '  flag', '    ? "trace"', '    : "video"']
 
     expect(collectViolationsFromLines(lines)).toEqual([])
+  })
+
+  it('省略記法・computed key・テンプレートキー・start / stop 系呼び出しも検出する', () => {
+    const lines = [
+      'const options = { trace }',
+      `const other = { ['video']: 'on' }`,
+      'const third = { `screenshot`: `on` }',
+      'await context.tracing.startChunk()',
+      'await context.tracing.stop({ path: tracePath })',
+      'const { trace: destructured } = options',
+    ]
+
+    expect(collectViolationsFromLines(lines)).toEqual([1, 2, 3, 4, 5])
   })
 })
 

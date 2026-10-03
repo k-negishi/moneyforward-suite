@@ -253,6 +253,61 @@ describe('値の実行時検証（fail closed）', () => {
     expect(record.attempt).toBe(3)
     expect(record.durationMs).toBe(0)
   })
+
+  /** 同じ field へのアクセスごとに違う値を返す getter 付きイベントを作る（TOCTOU の再現）。 */
+  const createGetterEvent = (
+    field: 'job' | 'attempt',
+    values: readonly [unknown, unknown],
+  ): LogEvent => {
+    let accessCount = 0
+    const event: Record<string, unknown> = { ...baseEvent }
+    Object.defineProperty(event, field, {
+      enumerable: true,
+      get: () => {
+        const value = values[Math.min(accessCount, values.length - 1)]
+        accessCount += 1
+        return value
+      },
+    })
+    return event as unknown as LogEvent
+  }
+
+  // 値は一度だけ読み、検証と出力に同じ値を使う。1 回目の読み出しで有効値・2 回目で任意値を
+  // 返す getter でも、出力に現れるのは検証済みの 1 回目の値だけになる（1 回の読み出しでは
+  // getter の 2 回目の戻り値は知り得ないため、この形は「無出力」ではなく「2 回目の値を
+  // 出力しない」ことを固定する）。
+
+  it('job の getter が 1 回目に語彙内・2 回目に任意値を返しても、出力は 1 回目の値だけ', () => {
+    const capturing = createCapturingSink()
+    const logger = createStructuredLogger({ application: 'automation', sink: capturing.sink })
+
+    logger.log(createGetterEvent('job', ['refresh-accounts', 'LEAKED_FREE_STRING']))
+
+    const record = parseSingleLine(capturing.lines)
+    expect(record.job).toBe('refresh-accounts')
+    expect(capturing.lines[0]).not.toContain('LEAKED_FREE_STRING')
+  })
+
+  it('attempt の getter が 1 回目に整数・2 回目に toJSON 持ちオブジェクトを返しても、出力は 1 回目の値だけ', () => {
+    const capturing = createCapturingSink()
+    const logger = createStructuredLogger({ application: 'automation', sink: capturing.sink })
+
+    logger.log(createGetterEvent('attempt', [1, { toJSON: () => 'LEAKED_FREE_STRING' }]))
+
+    const record = parseSingleLine(capturing.lines)
+    expect(record.attempt).toBe(1)
+    expect(capturing.lines[0]).not.toContain('LEAKED_FREE_STRING')
+  })
+
+  it('getter が 1 回目に語彙外の値を返すイベントは出力しない（Fail Closed）', () => {
+    const capturing = createCapturingSink()
+    const logger = createStructuredLogger({ application: 'automation', sink: capturing.sink })
+
+    logger.log(createGetterEvent('job', ['LEAKED_FREE_STRING', 'refresh-accounts']))
+    logger.log(createGetterEvent('attempt', [{ toJSON: () => 1 }, 1]))
+
+    expect(capturing.lines).toEqual([])
+  })
 })
 
 describe('既定 sink（stdout）', () => {
