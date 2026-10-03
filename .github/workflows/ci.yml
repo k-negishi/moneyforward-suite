@@ -51,6 +51,22 @@ jobs:
       - name: 依存を lockfile 固定でインストールする
         run: pnpm install --frozen-lockfile
 
+      # lint の診断には noSecrets の候補文字列が含まれ得るため、生の出力はログへ流さず、
+      # レポートを一時ファイル（ランナー内で消える。Artifact として保存しない）へ書き出し、
+      # 失敗時はルール ID と対象ファイルの位置だけを表示する（Minimal Logging）。
+      - name: lint を実行する
+        run: |
+          status=0
+          pnpm exec biome ci --error-on-warnings . \
+            --reporter=json --reporter-file="$RUNNER_TEMP/biome-diagnostics.json" || status=$?
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+          echo 'lint が失敗しました。ルール ID と対象ファイルの位置だけを表示します。'
+          jq -r '.diagnostics[] | "\(.category) \(.location.path // "?"):\(.location.start.line // "?")"' \
+            "$RUNNER_TEMP/biome-diagnostics.json"
+          exit "$status"
+
       # Adapter のブラウザテストは実 chromium を使う。取得物は lockfile（playwright の
       # バージョン）に紐づけてキャッシュし、一致するキャッシュがあれば再取得しない。
       - name: Playwright のブラウザをキャッシュする

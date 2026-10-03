@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process'
 import { lstatSync, readFileSync } from 'node:fs'
-import { extname, join } from 'node:path'
+import { extname, join, matchesGlob } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
+import { isAlias, isMap, isScalar, isSeq, LineCounter, parseAllDocuments } from 'yaml'
 
 /**
  * リポジトリのルート。cwd に依存せず、このテストファイルの位置（tests/）から解決する。
@@ -84,31 +85,29 @@ const forbiddenPatterns: readonly RegExp[] = [
  * 認証セッション・Screenshot・Trace・HAR・Video などの機微な情報を CI の外へ持ち出し得る。
  * 保存が必要な調査はローカルで行い、成果物は git 管理外に置く。
  *
- * 1 つ目は `uses` キーに続く保存 Action の参照（大文字小文字は問わない）を検出する。
- * 2 つ目は `uses` キーの値が同一行のプレーンスカラーでない記法（`>-` / `|` / コメントのみ /
- * 値なし、`!` `&` `*` で始まるタグ・アンカー・エイリアス）を検出する。値や参照が同一行に
- * なくても、デコレーションを挟んでも YAML としては解決され得るため、これを許すと行単位の
- * 検査をすり抜けて保存 Action を参照できてしまう。`uses` キーの直後にこれらで始まる正当な
- * Action 参照は存在しない。
- * 3 つ目は YAML の explicit key（`? uses`）を検出する。値は次行になるため行単位では解決
- * できないが、キーの行の時点で検出側に倒す。キーを引用符で囲む形（`"uses":` / `'uses':`）は
- * 1・2 つ目のパターンが引用符を許容することで検出する。
+ * 検査は行単位の文字列一致ではなく、ファイルを YAML としてパースして `uses` キーを構造的に
+ * 辿る。行単位では、同じ Action 参照を表す等価な記法（folded / literal スカラー、タグ・
+ * アンカー・エイリアス、引用符付きのキー、explicit key、大文字表記、引用符内のエスケープ）を
+ * 網羅できず、検査をすり抜けられるため。パースに失敗したファイルは違反として扱う
+ * （fail closed。解釈できない YAML を「違反なし」と読み飛ばすと、検査が黙って弱まる）。
  *
- * 検査は行単位の best-effort。別行で定義したアンカーを参照する間接参照、引用符内の
- * エスケープやインラインデコレーション（`\x61` 等）による難読化、`run:` ステップ内での
- * 送出、別名・ラッパーなど未知の Action は防げない。レビューで補う。行単位の文字列一致
- * では YAML の等価表現を網羅できないため、YAML としてパースして `uses` キーを構造的に
- * 検査する方式は、この限界を閉じる将来の改善候補（依存追加が必要）。
+ * 残る限界: `run:` ステップからのネットワーク送出（YAML の `uses` を介さない参照）と、
+ * 保存 Action を呼ぶ別名・ラッパー Action（未知の Action）は検出できない。レビューで補う。
  */
-const forbiddenWorkflowPatterns: readonly RegExp[] = [
-  /uses["']?\s*:\s*\S*upload-artifact/i,
-  /uses["']?\s*:\s*(?:[>|#&*!]|$)/,
-  /^\s*(?:-\s*)?\?\s*["']?uses["']?\s*$/,
-]
+const forbiddenActionName = 'upload-artifact'
+
+/** Action 定義（ワークフロー・composite action）として検査する拡張子（`.github/` 配下）。 */
+const actionDefinitionExtensions = new Set(['.yaml', '.yml'])
+
+/** Action 定義ファイルのパスか（`.github/` 配下の YAML だけを YAML として検査する）。 */
+const isActionDefinitionPath = (path: string): boolean =>
+  path.startsWith(githubDirectoryPrefix) &&
+  actionDefinitionExtensions.has(extname(path).toLowerCase())
 
 interface Violation {
   readonly path: string
-  readonly line: number
+  /** 違反位置の行番号（1 始まり）。YAML のパースエラーで位置を取れない場合だけ省略する。 */
+  readonly line?: number
 }
 
 /**
@@ -221,10 +220,99 @@ const isForbiddenLine = (line: string): boolean => {
   return forbiddenPatterns.some((pattern) => pattern.test(normalized))
 }
 
-/** ワークフローの行が禁止パターン（保存 Action の参照）に一致するか。 */
-const isForbiddenWorkflowLine = (line: string): boolean => {
-  const normalized = line.normalize('NFKC')
-  return forbiddenWorkflowPatterns.some((pattern) => pattern.test(normalized))
+/** YAML のパース結果として報告する違反位置（パスは呼び出し元が添える）。 */
+type ViolationLocation = Pick<Violation, 'line'>
+
+/**
+ * Action 定義ファイル（YAML）の中身をパースし、保存 Action を参照する `uses` キーの位置を返す。
+ *
+ * - `uses` キーの名前は完全一致で判定する（GitHub Actions が解釈するキーは正確な `uses` だけ。
+ *   `USES` や全角の `ｕｓｅｓ` は別のキーになる）。
+ * - 値はエイリアスを解決したうえで、大文字小文字を問わず `upload-artifact` を含む場合に違反
+ *   とする（Action 名の大文字小文字は参照の同一性を変えない）。
+ * - パースに失敗したファイルは違反として扱う（fail closed）。位置が取れれば行番号を添える。
+ */
+const locateForbiddenActionUses = (contents: string): ViolationLocation[] => {
+  // 行番号はファイル内の位置で数える（ファイル間で対応が混ざらないよう、ここで作る）。
+  const lineCounter = new LineCounter()
+
+  let documents: ReturnType<typeof parseAllDocuments>
+  try {
+    documents = parseAllDocuments(contents, { lineCounter })
+  } catch {
+    // 構文エラーは通常 document.errors に集まる（この catch は想定外の入力への保険）。
+    // 解釈できない入力を「違反なし」と読み飛ばさない。
+    return [{ line: undefined }]
+  }
+
+  /** アンカー名 → そのノード。エイリアス（`*name`）の解決に使う。 */
+  const anchors = new Map<string, unknown>()
+
+  /** ノードがアンカー（`&name`）を持つ場合に表へ登録する（エイリアスの解決先になる）。 */
+  const registerAnchor = (node: unknown): void => {
+    if ((isScalar(node) || isMap(node) || isSeq(node)) && typeof node.anchor === 'string') {
+      anchors.set(node.anchor, node)
+    }
+  }
+
+  /** エイリアスの連鎖を解決する。解決できない・循環する場合は null。 */
+  const resolveAliases = (node: unknown): unknown => {
+    const seen = new Set<unknown>()
+    let current = node
+    while (isAlias(current)) {
+      if (seen.has(current)) {
+        return null
+      }
+      seen.add(current)
+      current = anchors.get(current.source) ?? null
+    }
+    return current
+  }
+
+  const violations: ViolationLocation[] = []
+
+  const walk = (node: unknown): void => {
+    registerAnchor(node)
+
+    if (isMap(node)) {
+      for (const pair of node.items) {
+        if (isScalar(pair.key) && pair.key.value === 'uses') {
+          const value = resolveAliases(pair.value)
+          if (
+            isScalar(value) &&
+            typeof value.value === 'string' &&
+            value.value.toLowerCase().includes(forbiddenActionName)
+          ) {
+            // 行番号はキーの位置（`uses` を書いた行）を指す。位置が取れない場合だけ省略する。
+            const range = pair.key.range
+            violations.push({ line: range ? lineCounter.linePos(range[0]).line : undefined })
+          }
+        }
+        // キーと値の両方を辿る（`uses` が入れ子のマップ・シーケンスの中にあっても拾う）。
+        walk(pair.value)
+        walk(pair.key)
+      }
+      return
+    }
+
+    if (isSeq(node)) {
+      for (const item of node.items) {
+        walk(item)
+      }
+    }
+  }
+
+  for (const document of documents) {
+    if (document.errors.length > 0) {
+      // パースエラーの内容（行の抜粋を含む）は報告せず、位置だけを違反として扱う。
+      violations.push({ line: document.errors[0]?.linePos?.[0]?.line })
+      continue
+    }
+
+    walk(document.contents)
+  }
+
+  return violations
 }
 
 /** 対象ファイルを走査し、違反した行を集める。 */
@@ -249,12 +337,12 @@ const collectViolations = (targets: readonly TargetFile[]): Violation[] => {
   return violations
 }
 
-/** `.github/` 配下のファイルだけを走査し、違反した行を集める。 */
+/** Action 定義ファイル（`.github/` 配下の YAML）を走査し、保存 Action の参照を集める。 */
 const collectWorkflowViolations = (targets: readonly TargetFile[]): Violation[] => {
   const violations: Violation[] = []
 
   for (const target of targets) {
-    if (!target.path.startsWith(githubDirectoryPrefix)) {
+    if (!isActionDefinitionPath(target.path)) {
       continue
     }
 
@@ -263,20 +351,20 @@ const collectWorkflowViolations = (targets: readonly TargetFile[]): Violation[] 
       continue
     }
 
-    const lines = contents.split(LINE_BREAK_PATTERN)
-
-    lines.forEach((line, index) => {
-      if (isForbiddenWorkflowLine(line)) {
-        violations.push({ path: target.path, line: index + 1 })
-      }
-    })
+    for (const location of locateForbiddenActionUses(contents)) {
+      violations.push({ path: target.path, line: location.line })
+    }
   }
 
   return violations
 }
 
+/** 違反の位置を `path` または `path:line` の形式にする（行番号を取れない場合がある）。 */
+const formatViolationLocation = (violation: Violation): string =>
+  violation.line === undefined ? violation.path : `${violation.path}:${violation.line}`
+
 /**
- * 違反を `path:line` の形式で列挙した報告メッセージを組み立てる。
+ * 違反を `path(:line)` の形式で列挙した報告メッセージを組み立てる。
  * 行の内容は出力しない（機微情報がテスト・CI ログへ漏れ得るため。Minimal Logging 準拠）。
  */
 const formatViolationReport = (violations: readonly Violation[]): string =>
@@ -284,19 +372,19 @@ const formatViolationReport = (violations: readonly Violation[]): string =>
     `コメント規約違反を ${violations.length} 件検出しました（CLAUDE.md の「## コメント規約」を参照）。`,
     '設計書のセクション番号や Issue / PR 番号は、改版・移設で陳腐化するためコメントに書かない。',
     '',
-    ...violations.map((violation) => `${violation.path}:${violation.line}`),
+    ...violations.map((violation) => formatViolationLocation(violation)),
   ].join('\n')
 
 /**
- * Artifact 保存の抑止で検出した違反を `path:line` の形式で列挙する。
+ * Artifact 保存の抑止で検出した違反を `path(:line)` の形式で列挙する。
  * 行の内容は出力しない（保存物の情報がテスト・CI ログへ漏れ得るため。Minimal Logging 準拠）。
  */
 const formatWorkflowViolationReport = (violations: readonly Violation[]): string =>
   [
-    `Action 定義で保存 Action の参照を ${violations.length} 件検出しました（.github/）。`,
+    `Action 定義（.github/ の YAML）で保存 Action の参照、または YAML として解釈できない記述を ${violations.length} 件検出しました。`,
     '認証セッション・Screenshot・Trace・HAR・Video などの機微な Artifact は CI から保存しない。',
     '',
-    ...violations.map((violation) => `${violation.path}:${violation.line}`),
+    ...violations.map((violation) => formatViolationLocation(violation)),
   ].join('\n')
 
 describe('コメント規約（CLAUDE.md）', () => {
@@ -389,7 +477,7 @@ describe('禁止パターン（誤検出・検出漏れの回帰防止）', () =
 describe('Action 定義の保存物（.github）', () => {
   it('機微な Artifact を保存する Action がワークフローと composite action に現れない', () => {
     const actionDefinitionFiles = collectTargetFiles().filter((target) =>
-      target.path.startsWith(githubDirectoryPrefix),
+      isActionDefinitionPath(target.path),
     )
 
     // 列挙の配線が壊れて対象 0 件になっても成功してしまう事故を防ぐ。
@@ -403,44 +491,272 @@ describe('Action 定義の保存物（.github）', () => {
   })
 })
 
-describe('保存 Action の禁止パターン（誤検出・検出漏れの回帰防止）', () => {
-  const cases: [string, boolean][] = [
-    // 検出する（バージョンや SHA 固定、大文字表記、前置きの有無、行の位置を問わない）
-    ['uses: actions/upload-artifact@v7', true],
-    ['      - uses: actions/upload-artifact@v7', true],
-    ['uses: actions/upload-artifact', true],
-    // SHA 固定形式でも repo 名で検出できる（バージョンコメントの有無を問わない）
-    ['uses: actions/upload-artifact@7d29b5b9e8b3f46f4f7e8b8e6b9c0b1c2d3e4f50 # v4.6.2', true],
-    ['uses: Actions/Upload-Artifact@v7', true], // 大文字表記（大文字小文字は問わない）
-    // 検出する（値が同一行のプレーンスカラーでない記法は 1 行目の時点で止め、迂回させない）
-    ['      - uses: >-', true], // folded スカラー。値は次行以降だが、この行だけで検出する
-    ['      - uses: |', true], // literal スカラー
-    ['      - uses:', true], // 値が同一行にない
-    ['      - uses: # 値は次行に書く', true], // コメントのみで値が同一行にない
-    ['      - uses: !!str |', true], // タグ（!!str）付きの literal スカラー
-    ['      - uses: &x >-', true], // アンカー（&x）付きの folded スカラー
-    ['      - uses: *ref', true], // エイリアス（別行で定義したアンカーを参照する記法）
-    // 検出する（キーの等価な書き方〈引用キー・explicit key〉も行の時点で止める）
-    ['      - "uses": actions/upload-artifact@v4', true], // 二重引用符のキー
-    ["      - 'uses': >-", true], // 単一引用符のキー + folded スカラー
-    ['      - ? uses', true], // explicit key（値は次行。キーの行で検出する）
-    ['        actions/upload-artifact@v4', false], // 値の行だけでは検出しない（上の行で止める）
-    // 検出しない（保存以外の Action の参照、保存 Action を指さないコメント・run: 内の文字列）
-    ['# upload-artifact による保存は行わない（方針のメモ）', false],
-    ['run: echo "upload-artifact は使わない"', false],
-    ['run: echo "uses: actions/checkout@v7"', false], // run: 内の文字列は複数行記法ではない
-    ['uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', false],
-    // 行末のバージョンコメント（値の後に `#` が来る形）は記法ではない
-    ['uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1', false],
-    // 引用キーでも保存 Action 以外は対象外（キー記法の一般化による誤検出がないこと）
-    ['      - "uses": actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', false],
-    ['uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', false],
-    ['uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413', false],
-    ['uses: actions/download-artifact@v7', false],
-    ['run: pnpm test', false],
+describe('保存 Action の検査（YAML パース・誤検出と検出漏れの回帰防止）', () => {
+  /** ワークフローの最小構成に検査対象の記法を差し込む（先頭の step 行だけ `- ` を補う）。 */
+  const workflowWithStep = (stepLines: readonly string[]): string =>
+    [
+      'name: probe',
+      'on: workflow_dispatch',
+      'jobs:',
+      '  build:',
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      ...stepLines.map((line, index) => (index === 0 ? `      - ${line}` : line)),
+      '',
+    ].join('\n')
+
+  const detectedCases: [name: string, definition: string, expectedLines: number[]][] = [
+    ['プレーンスカラー', workflowWithStep(['uses: actions/upload-artifact@v7']), [7]],
+    ['バージョンなし', workflowWithStep(['uses: actions/upload-artifact']), [7]],
+    [
+      'SHA 固定 + バージョンコメント',
+      workflowWithStep([
+        'uses: actions/upload-artifact@7d29b5b9e8b3f46f4f7e8b8e6b9c0b1c2d3e4f50 # v4.6.2',
+      ]),
+      [7],
+    ],
+    ['値の大文字表記', workflowWithStep(['uses: Actions/Upload-Artifact@v7']), [7]],
+    [
+      'folded スカラー',
+      workflowWithStep(['uses: >-', '          actions/upload-artifact@v4']),
+      [7],
+    ],
+    [
+      'literal スカラー',
+      workflowWithStep(['uses: |-', '          actions/upload-artifact@v4']),
+      [7],
+    ],
+    ['二重引用符のキー', workflowWithStep(['"uses": actions/upload-artifact@v4']), [7]],
+    [
+      '単一引用符のキー + folded スカラー',
+      workflowWithStep(["'uses': >-", '          actions/upload-artifact@v4']),
+      [7],
+    ],
+    ['explicit key', workflowWithStep(['? uses', '        : actions/upload-artifact@v4']), [7]],
+    [
+      'explicit key + 行末コメント',
+      workflowWithStep(['? uses # メモ', '        : actions/upload-artifact@v4']),
+      [7],
+    ],
+    [
+      'explicit key + タグ',
+      workflowWithStep(['? !!str uses', '        : actions/upload-artifact@v4']),
+      [7],
+    ],
+    [
+      'explicit key（キーの内容は次行）',
+      workflowWithStep(['?', '          uses', '        : actions/upload-artifact@v4']),
+      [8],
+    ],
+    [
+      'キーの行末コメント + 値は次行',
+      workflowWithStep(['uses: # 値は次行に書く', '          actions/upload-artifact@v4']),
+      [7],
+    ],
+    ['値は次行', workflowWithStep(['uses:', '          actions/upload-artifact@v4']), [7]],
+    [
+      'タグ付き literal スカラー',
+      workflowWithStep(['uses: !!str |-', '          actions/upload-artifact@v4']),
+      [7],
+    ],
+    [
+      'アンカー付き folded スカラー',
+      workflowWithStep(['uses: &x >-', '          actions/upload-artifact@v4']),
+      [7],
+    ],
+    ['引用符内のエスケープ', workflowWithStep(['uses: "acti\\x6Fns/upload-artifact@v4"']), [7]],
+    [
+      '別行のアンカーをエイリアスで参照する',
+      [
+        'name: probe',
+        'on: workflow_dispatch',
+        'env:',
+        '  REF: &ref actions/upload-artifact@v4',
+        'jobs:',
+        '  build:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: *ref',
+        '',
+      ].join('\n'),
+      [9],
+    ],
+    [
+      'パースできない YAML（キーの内容を次行に置く不正形）',
+      workflowWithStep(['?', '        uses', '        : actions/upload-artifact@v4']),
+      [8],
+    ],
   ]
 
-  it.each(cases)('%s → %s', (line, expected) => {
-    expect(isForbiddenWorkflowLine(line)).toBe(expected)
+  it.each(detectedCases)('%s → 検出する', (name, definition, expectedLines) => {
+    expect(
+      locateForbiddenActionUses(definition).map((violation) => violation.line),
+      `ケース「${name}」: 期待する検出行は ${expectedLines.join(', ')}`,
+    ).toEqual(expectedLines)
+  })
+
+  const notDetectedCases: [name: string, definition: string][] = [
+    [
+      '保存 Action 以外（download-artifact）',
+      workflowWithStep(['uses: actions/download-artifact@v7']),
+    ],
+    [
+      '保存 Action 以外（checkout + バージョンコメント）',
+      workflowWithStep([
+        'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+      ]),
+    ],
+    [
+      '引用キーでも保存 Action 以外は対象外',
+      workflowWithStep(['"uses": actions/setup-node@820762786026740c76f36085b0efc47a31fe5020']),
+    ],
+    [
+      'エイリアスでも保存 Action 以外は対象外',
+      [
+        'name: probe',
+        'on: workflow_dispatch',
+        'env:',
+        '  REF: &ref actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
+        'jobs:',
+        '  build:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: *ref',
+        '',
+      ].join('\n'),
+    ],
+    ['別のキーの値（name）', workflowWithStep(['name: actions/upload-artifact@v4'])],
+    [
+      'キーでない位置の文字列（step が文字列）',
+      workflowWithStep(['run: echo hi', '      - actions/upload-artifact@v4']),
+    ],
+    [
+      'コメント内の言及',
+      workflowWithStep(['# upload-artifact による保存は行わない（方針のメモ）', 'run: pnpm test']),
+    ],
+    ['run: 内の文字列', workflowWithStep(['run: echo "upload-artifact は使わない"'])],
+    ['run: 内の uses 風文字列', workflowWithStep(['run: \'echo "uses: actions/checkout@v7"\''])],
+    ['値が空の uses（null は参照ではない）', workflowWithStep(['uses:', '        run: echo hi'])],
+    [
+      'コメントのみの uses（null は参照ではない）',
+      workflowWithStep(['uses: # コメントのみ', '        run: echo hi']),
+    ],
+    ['大文字キー（USES）は別のキー', workflowWithStep(['USES: actions/upload-artifact@v4'])],
+    ['全角キー（ｕｓｅｓ）は別のキー', workflowWithStep(['ｕｓｅｓ: actions/upload-artifact@v4'])],
+    ['uses キーを持たない YAML', 'jobs: {}\n'],
+    ['空のファイル', ''],
+  ]
+
+  it.each(notDetectedCases)('%s → 検出しない', (name, definition) => {
+    expect(locateForbiddenActionUses(definition), `ケース「${name}」で誤検出しました`).toEqual([])
+  })
+
+  it('行番号はファイル内の位置（1 始まり）を指す', () => {
+    const definition = workflowWithStep([
+      'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
+      '      - uses: actions/upload-artifact@v7',
+    ])
+
+    expect(locateForbiddenActionUses(definition)).toEqual([{ line: 8 }])
+  })
+})
+
+/**
+ * JSONC からコメントだけを取り除く（文字列の内外を区別する最小の状態機械）。
+ * biome.jsonc はコメント付き JSON（末尾カンマなし）で運用しているため、これで JSON.parse に
+ * 渡せる。対応しない記法（末尾カンマ等）が入った場合は JSON.parse が失敗してテストが落ちる
+ * （黙って検査を弱めない）。
+ */
+const stripJsonComments = (source: string): string => {
+  const result: string[] = []
+  let inString = false
+  let inLineComment = false
+  let inBlockComment = false
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source.charAt(index)
+    const next = source.charAt(index + 1)
+
+    if (inLineComment) {
+      if (char === '\n') {
+        inLineComment = false
+        result.push(char)
+      }
+      continue
+    }
+    if (inBlockComment) {
+      if (char === '*' && next === '/') {
+        inBlockComment = false
+        index += 1
+      }
+      continue
+    }
+    if (inString) {
+      result.push(char)
+      if (char === '\\') {
+        result.push(next)
+        index += 1
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+    if (char === '"') {
+      inString = true
+      result.push(char)
+    } else if (char === '/' && next === '/') {
+      inLineComment = true
+      index += 1
+    } else if (char === '/' && next === '*') {
+      inBlockComment = true
+      index += 1
+    } else {
+      result.push(char)
+    }
+  }
+
+  return result.join('')
+}
+
+/** biome.jsonc の overrides（検査に必要な範囲）。 */
+interface BiomeOverride {
+  /** 適用対象の glob（Biome の includes）。否定（`!` 始まり）は「対象外」の指定なので検査しない。 */
+  readonly includes?: readonly string[]
+}
+
+interface BiomeConfig {
+  readonly overrides?: readonly BiomeOverride[]
+}
+
+describe('biome.jsonc の overrides の対象ファイル', () => {
+  it('include パターンが実在するファイルに一致する（ファイル移動で無効化されていない）', () => {
+    const config: BiomeConfig = JSON.parse(
+      stripJsonComments(readFileSync(join(repoRoot, 'biome.jsonc'), 'utf8')),
+    )
+    const overrides = config.overrides ?? []
+
+    // overrides が空・読み取りの崩れで「一致 0 件」の検査自体が無意味になる事故を防ぐ。
+    expect(overrides.length, 'biome.jsonc の overrides を読み取れませんでした').toBeGreaterThan(0)
+
+    // 追跡ファイルを基準にする（未追跡の一時ファイルが偶然一致する状態を「一致あり」と
+    // 見なさない）。
+    const files = listGitFiles('--cached')
+    const unmatchedIncludes: string[] = []
+
+    for (const override of overrides) {
+      for (const include of override.includes ?? []) {
+        if (include.startsWith('!')) {
+          continue
+        }
+        if (!files.some((file) => matchesGlob(file, include))) {
+          unmatchedIncludes.push(include)
+        }
+      }
+    }
+
+    expect(
+      unmatchedIncludes,
+      `一致するファイルが 1 件もない include: ${unmatchedIncludes.join(', ')}`,
+    ).toEqual([])
   })
 })

@@ -2,6 +2,9 @@
 # Dependabot は SHA 固定でも、併記したバージョンコメント（例: # v7.0.1）を手がかりに
 # SHA とコメントをまとめて更新する。週次で全 Action を 1 つの PR にグループ化し、
 # レビューと検証の往復を抑える。
+# 走査の対象はワークフロー（.github/workflows）とリポジトリ直下の action.yml の参照で、
+# .github/actions 配下の composite action は directory: / では再帰しないため対象外。
+# composite action を追加した場合は、directories に対象パスを足すか依存の更新を手動で行う。
 version: 2
 updates:
   - package-ecosystem: github-actions
