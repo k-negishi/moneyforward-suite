@@ -24,3 +24,4 @@ export { RefreshAccountsUseCase } from './application/refresh-accounts-use-case.
 export type { AuthSession, MoneyForwardPort, SessionVerification } from './ports/money-forward-port.js'
 export type { SecretId, SecretStorePort, SecretValue } from './ports/secret-store-port.js'
 export type { LogApplication, LogEvent, LogJob, LogStatus, LoggerPort } from './ports/logger-port.js'
+export { isLogJob, isLogStatus } from './ports/logger-port.js'
