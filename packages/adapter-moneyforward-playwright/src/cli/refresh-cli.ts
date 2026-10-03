@@ -52,11 +52,15 @@ export const parseRefreshArgs = (argv: readonly string[]): RefreshOptions | null
   for (const arg of argv) {
     switch (arg) {
       case '--headed':
-        if (mode === 'headless') return null
+        if (mode === 'headless') {
+          return null
+        }
         mode = 'headed'
         break
       case '--headless':
-        if (mode === 'headed') return null
+        if (mode === 'headed') {
+          return null
+        }
         mode = 'headless'
         break
       case '--execute':

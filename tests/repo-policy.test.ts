@@ -76,7 +76,7 @@ const forbiddenPatterns: readonly RegExp[] = [
   // 裸の番号参照（例: #5・#7、（#2））。見出し（## 1）、手順コメントの連番（# 10.）、
   // hex カラー（#123456）、URL アンカー（#1-overview）、HTML エンティティ（&#39;）、
   // C#8 のような識別子は対象外になるよう、前後の文字と桁数（hex 回避のため 4 桁まで）を限定する。
-  /(?<![\w#])#\d{1,4}(?![\dA-Za-z_;\-])/,
+  /(?<![\w#])#\d{1,4}(?![\dA-Za-z_;-])/,
 ]
 
 /**
@@ -129,21 +129,35 @@ const collectTargetFiles = (): string[] =>
   listRepoFiles().filter((relativePath) => {
     const absolutePath = join(repoRoot, relativePath)
 
-    if (absolutePath === selfPath) return false
-    if (excludedDirectoryPrefixes.some((prefix) => relativePath.startsWith(prefix))) return false
-    if (excludedFilePaths.has(relativePath)) return false
+    if (absolutePath === selfPath) {
+      return false
+    }
+    if (excludedDirectoryPrefixes.some((prefix) => relativePath.startsWith(prefix))) {
+      return false
+    }
+    if (excludedFilePaths.has(relativePath)) {
+      return false
+    }
 
     const baseName = relativePath.slice(relativePath.lastIndexOf('/') + 1)
-    if (!targetExtensions.has(extname(baseName).toLowerCase()) && !extensionlessConfigFiles.has(baseName)) {
+    if (
+      !targetExtensions.has(extname(baseName).toLowerCase()) &&
+      !extensionlessConfigFiles.has(baseName)
+    ) {
       return false
     }
 
     // 未ステージで削除されたファイル（git の index に残っている）で落ちないよう存在を確認する。
-    if (!existsSync(absolutePath)) return false
+    if (!existsSync(absolutePath)) {
+      return false
+    }
 
     // シンボリックリンク（AGENTS.md 等）は実体を二重に検査しないため対象外にする。
     return !lstatSync(absolutePath).isSymbolicLink()
   })
+
+/** 行分割の改行パターン（CRLF / LF の両方を扱う。行番号を報告に使うため、ここで分割する）。 */
+const LINE_BREAK_PATTERN = /\r?\n/
 
 /** 行が規約違反（番号参照）に一致するか。全角文字は NFKC 正規化してから判定する。 */
 const isForbiddenLine = (line: string): boolean => {
@@ -162,7 +176,7 @@ const collectViolations = (filePaths: readonly string[]): Violation[] => {
   const violations: Violation[] = []
 
   for (const relativePath of filePaths) {
-    const lines = readFileSync(join(repoRoot, relativePath), 'utf8').split(/\r?\n/)
+    const lines = readFileSync(join(repoRoot, relativePath), 'utf8').split(LINE_BREAK_PATTERN)
 
     lines.forEach((line, index) => {
       if (isForbiddenLine(line)) {
@@ -230,7 +244,7 @@ describe('コメント規約（CLAUDE.md）', () => {
 })
 
 describe('禁止パターン（誤検出・検出漏れの回帰防止）', () => {
-  const cases: Array<[string, boolean]> = [
+  const cases: [string, boolean][] = [
     // 検出する
     ['§9 に従う', true],
     ['§27〜§34 の制約', true],
