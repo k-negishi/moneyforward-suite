@@ -8,9 +8,11 @@
 #   - ローカルの master が origin/master から分岐している（未 push のコミットがある）
 #   - origin へ到達できない、または認証を求められる
 #
-# 更新は --ff-only に限定するため、コミットが失われる経路はない。untracked・ignored
-# ファイルは差分判定に含まれないため、--no-overwrite-ignore で merge 側でも保護する
-# （上書きが必要な場合は git が merge を中止し、このスクリプトは何もしない）。
+# 更新は --ff-only に限定するため、コミットが失われる経路はない。作業ツリー上の
+# 追跡外ファイルの保護は 2 段階になる。未追跡（ignore されていない）ファイルの上書きは
+# git merge が既定で拒否する。ignored ファイルは既定では黙って上書きされるため、
+# --no-overwrite-ignore で拒否させる。どちらの場合も merge が中止され、このスクリプトは
+# 何もしない。
 # 失敗はすべて exit 0 で握りつぶし、セッション開始を妨げない。
 
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
