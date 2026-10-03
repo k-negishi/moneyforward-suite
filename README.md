@@ -66,7 +66,7 @@ pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:refresh --execute 
 
 ## 開発補助（Claude Code）
 
-実装は Claude Code を併用して進める。以下のプラグインと MCP サーバーは**開発時の支援のためのもので、プロダクトの機能ではなく、ビルド・テスト・実行時の依存にも含まれない**（無効化しても `pnpm build` / `pnpm test` は成立する）。
+実装は Claude Code を併用して進める。以下のプラグイン・MCP サーバー・カスタムエージェントは**開発時の支援のためのもので、プロダクトの機能ではなく、ビルド・テスト・実行時の依存にも含まれない**（無効化しても `pnpm build` / `pnpm test` は成立する）。
 
 ### プラグイン
 
@@ -87,6 +87,17 @@ pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:refresh --execute 
 | `aws-knowledge` | AWS 公式ドキュメント・リージョン情報の参照 |
 
 いずれもローカルへの事前導入は不要（`playwright` は `npx` 実行で、バージョンは `.mcp.json` で固定する。`aws-knowledge` は AWS 提供のリモートサーバーへ HTTP 接続する）。
+
+### カスタムエージェント
+
+`.claude/agents/` に、レビュー専用のサブエージェントを2つ置いている（CLAUDE.md の開発ワークフローで、実装完了後・コミット前に起動する）。
+
+| エージェント | 用途 |
+|---|---|
+| `code-reviewer` | 変更差分の correctness と要件の充足を検証する。ADR との整合、Core / Adapter の依存境界、Playwright の成功判定、回帰リスクを主な観点とする |
+| `security-reviewer` | Secret の混入、ログの allow list、認証チャレンジの扱い、fail closed の破れ、汎用脆弱性クラスを検証する |
+
+どちらも `Read` / `Grep` / `Glob` に限定した読み取り専用で、コードは修正せず指摘のみを返す。
 
 ## 機密情報の取り扱い
 
