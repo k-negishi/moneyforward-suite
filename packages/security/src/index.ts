@@ -13,6 +13,7 @@ export {
   resolveSessionFilePath,
   SESSION_FILE_ENV_VAR,
 } from './session/session-path.js'
+export { parseSessionSecret } from './session/session-secret.js'
 export type {
   SessionCookie,
   SessionOrigin,
