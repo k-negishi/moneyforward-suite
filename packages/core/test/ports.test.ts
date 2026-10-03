@@ -4,8 +4,10 @@ import type {
   AuthSession,
   LogEvent,
   LoggerPort,
+  LogStatus,
   MoneyForwardPort,
   RefreshAccountsOutcome,
+  RefreshAccountsStatus,
   Result,
   SecretId,
   SecretStorePort,
@@ -57,6 +59,11 @@ describe('LoggerPort の型契約', () => {
 
   it('job は refresh-accounts のリテラルに固定されている', () => {
     expectTypeOf<LogEvent['job']>().toEqualTypeOf<'refresh-accounts'>()
+  })
+
+  it('status は終状態に開始状態を加えた語彙に固定されている', () => {
+    expectTypeOf<LogStatus>().toEqualTypeOf<RefreshAccountsStatus | 'STARTED'>()
+    expectTypeOf<LogEvent['status']>().toEqualTypeOf<LogStatus>()
   })
 
   it('Allow List 外の field（自由文字列）は追加できない', () => {

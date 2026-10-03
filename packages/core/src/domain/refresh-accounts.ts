@@ -1,3 +1,5 @@
+import type { DomainError, ErrorCode } from '../errors.js'
+
 /**
  * 金融機関のデータ一括更新（refresh-accounts）のドメイン語彙。
  * 行テキスト・口座名・URL は型に載せない（Secret・金融情報が Core の型を通じて
@@ -38,46 +40,12 @@ export interface RefreshAccountsOutcome {
 export type RefreshAccountsStatus = 'SUCCESS' | 'PARTIAL_SUCCESS' | 'NO_REFRESH_NEEDED' | 'FAILURE'
 
 /**
- * エラー分類。message 等の自由文字列は持たない
- * （自由文字列は Secret・金融情報の混入経路になり、ログの Allow List も破る）。
- * SECRET_* と ACCESS_DENIED は Secret Store Adapter が区別する取得失敗の語彙と一致させる。
+ * Use Case の Application Result。
+ * errorCode は FAILURE のときだけ持つ（失敗以外にエラー分類が付かないことを型で表す）。
  */
-export type ErrorCode =
-  | 'AUTH_REQUIRED'
-  | 'SESSION_MISSING'
-  | 'SESSION_INVALID'
-  | 'INVALID_JOB'
-  | 'TARGET_NOT_FOUND'
-  | 'TARGET_AMBIGUOUS'
-  | 'REFRESH_REJECTED'
-  | 'REFRESH_NOT_ACCEPTED'
-  | 'TEMPORARY_FAILURE'
-  | 'SECRET_NOT_FOUND'
-  | 'SECRET_INVALID'
-  | 'ACCESS_DENIED'
-  | 'UNKNOWN'
-
-/**
- * 再試行できるエラー分類の対応表。
- * 一時障害・受付確認不能・判定不能のみ再試行する。認証（再ログインが要る）、Secret、
- * 対象特定（対象が無い・曖昧）、明示的な拒否は再試行しても回復しないため対象外
- * （欠如・破損・失効は区別して fail closed で停止する）。
- */
-const RETRYABLE_ERROR_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
-  'TEMPORARY_FAILURE',
-  'REFRESH_NOT_ACCEPTED',
-  'UNKNOWN',
-])
-
-/** エラー分類が再試行可能かを返す。 */
-export const isRetryableErrorCode = (code: ErrorCode): boolean => RETRYABLE_ERROR_CODES.has(code)
-
-/** Use Case の Application Result。終状態（status）と失敗の分類（errorCode）で表す。 */
-export interface ApplicationResult {
-  readonly status: RefreshAccountsStatus
-  /** 失敗の分類。SUCCESS / PARTIAL_SUCCESS では持たない。 */
-  readonly errorCode?: ErrorCode
-}
+export type ApplicationResult =
+  | { readonly status: 'SUCCESS' | 'PARTIAL_SUCCESS' | 'NO_REFRESH_NEEDED' }
+  | { readonly status: 'FAILURE'; readonly errorCode: ErrorCode }
 
 /**
  * 一括更新の観測結果を Application Result へ写像する（純関数）。
@@ -86,6 +54,8 @@ export interface ApplicationResult {
  * 観測がなければ受付確認不能（一時障害の可能性があるため再試行する）として区別する。
  * 一部の行だけが失敗した場合は部分成功とし、errorCode を付けない
  * （部分失敗を再試行の対象にするかは Use Case 側の判断として残す）。
+ * SUCCESS は「受付が確認でき、失敗の観測がない」ことを表し、更新の完了確認ではない
+ * （進行中シグナルの出現だけでも受付の確認として成功とする）。
  */
 export const toApplicationResult = (outcome: RefreshAccountsOutcome): ApplicationResult => {
   if (outcome.authLost) return { status: 'FAILURE', errorCode: 'AUTH_REQUIRED' }
@@ -104,3 +74,12 @@ export const toApplicationResult = (outcome: RefreshAccountsOutcome): Applicatio
 
   return { status: 'SUCCESS' }
 }
+
+/**
+ * Domain Error を失敗の Application Result へ写像する（正準の写像）。
+ * 呼び出し側が失敗結果を手組みしないための入口とし、分類の付け方を 1 箇所に固定する。
+ */
+export const toFailureResult = (error: DomainError): ApplicationResult => ({
+  status: 'FAILURE',
+  errorCode: error.code,
+})

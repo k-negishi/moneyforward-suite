@@ -1,10 +1,14 @@
-import type { ErrorCode, RefreshAccountsStatus } from '../domain/refresh-accounts.js'
+import type { RefreshAccountsStatus } from '../domain/refresh-accounts.js'
+import type { ErrorCode } from '../errors.js'
 
 /** ログに記録できる application（Allow List）。 */
 export type LogApplication = 'automation'
 
 /** ログに記録できる job（Allow List）。 */
 export type LogJob = 'refresh-accounts'
+
+/** ログに記録できる status。STARTED は Use Case の開始ログ用。 */
+export type LogStatus = RefreshAccountsStatus | 'STARTED'
 
 /**
  * ログに記録できる field だけを持つイベント。自由文字列フィールドを持たない
@@ -14,7 +18,7 @@ export type LogJob = 'refresh-accounts'
 export interface LogEvent {
   readonly application: LogApplication
   readonly job: LogJob
-  readonly status: RefreshAccountsStatus
+  readonly status: LogStatus
   readonly attempt: number
   readonly durationMs: number
   /** 失敗の分類。成功時は持たない。 */
