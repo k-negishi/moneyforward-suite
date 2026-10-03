@@ -55,7 +55,8 @@ const excludedFilePaths = new Set(['pnpm-lock.yaml'])
 
 /**
  * Action 定義（ワークフロー・composite action）が置かれるディレクトリ（リポジトリルートからの相対パス）。
- * このディレクトリ配下のファイルだけを、保存 Action の参照の抑止で追加検査する。
+ * このディレクトリ配下の YAML は（設定ファイル等も含めて）保存 Action の抑止で検査する。
+ * ファイル名が action.yml / action.yaml のファイルは、このディレクトリの外でも検査する。
  */
 const githubDirectoryPrefix = '.github/'
 
@@ -81,15 +82,18 @@ const forbiddenPatterns: readonly RegExp[] = [
 ]
 
 /**
- * `.github/` 配下で参照しない保存 Action。Artifact を GitHub 側へ保存する Action は、
- * 認証セッション・Screenshot・Trace・HAR・Video などの機微な情報を CI の外へ持ち出し得る。
- * 保存が必要な調査はローカルで行い、成果物は git 管理外に置く。
+ * `.github/` 配下の YAML と `action.yml` / `action.yaml`（任意の場所）で参照しない保存 Action。
+ * Artifact を GitHub 側へ保存する Action は、認証セッション・Screenshot・Trace・HAR・Video
+ * などの機微な情報を CI の外へ持ち出し得る。保存が必要な調査はローカルで行い、成果物は
+ * git 管理外に置く。
  *
  * 検査は行単位の文字列一致ではなく、ファイルを YAML としてパースして `uses` キーを構造的に
  * 辿る。行単位では、同じ Action 参照を表す等価な記法（folded / literal スカラー、タグ・
  * アンカー・エイリアス、引用符付きのキー、explicit key、大文字表記、引用符内のエスケープ）を
  * 網羅できず、検査をすり抜けられるため。パースに失敗したファイルは違反として扱う
  * （fail closed。解釈できない YAML を「違反なし」と読み飛ばすと、検査が黙って弱まる）。
+ * 同様に、`:` 終わりの曖昧なエイリアス（`*k:`）は yaml の警告（BAD_ALIAS）を違反として
+ * 扱う（この記法は正当なワークフローに現れない）。
  *
  * 残る限界: `run:` ステップからのネットワーク送出（YAML の `uses` を介さない参照）、
  * 保存 Action を呼ぶ別名・ラッパー Action（未知の Action）、外部リポジトリの reusable
@@ -321,6 +325,15 @@ const locateForbiddenActionUses = (contents: string): ViolationLocation[] => {
   }
 
   for (const document of documents) {
+    // `:` 終わりの曖昧なエイリアス（`*k:`）は、yaml が解決に失敗して警告（BAD_ALIAS）を
+    // 出す。正当なワークフローに現れない記法のため、警告でも違反として扱う（fail closed）。
+    // 行番号は警告の位置（エイリアスキーの行）を使う（errors 側の位置は副作用でずれ得る）。
+    const ambiguousAlias = document.warnings.find((warning) => warning.code === 'BAD_ALIAS')
+    if (ambiguousAlias !== undefined) {
+      violations.push({ line: ambiguousAlias.linePos?.[0]?.line })
+      continue
+    }
+
     if (document.errors.length > 0) {
       // パースエラーの内容（行の抜粋を含む）は報告せず、位置だけを違反として扱う。
       violations.push({ line: document.errors[0]?.linePos?.[0]?.line })
@@ -355,7 +368,10 @@ const collectViolations = (targets: readonly TargetFile[]): Violation[] => {
   return violations
 }
 
-/** Action 定義ファイル（`.github/` 配下の YAML）を走査し、保存 Action の参照を集める。 */
+/**
+ * Action 定義ファイル（`.github/` 配下の YAML と、任意の場所の action.yml / action.yaml）を
+ * 走査し、保存 Action の参照を集める。
+ */
 const collectWorkflowViolations = (targets: readonly TargetFile[]): Violation[] => {
   const violations: Violation[] = []
 
@@ -399,7 +415,7 @@ const formatViolationReport = (violations: readonly Violation[]): string =>
  */
 const formatWorkflowViolationReport = (violations: readonly Violation[]): string =>
   [
-    `Action 定義（.github/ の YAML）で保存 Action の参照、または YAML として解釈できない記述を ${violations.length} 件検出しました。`,
+    `Action 定義（.github/ の YAML と action.yml / action.yaml）で保存 Action の参照、または YAML として解釈できない記述を ${violations.length} 件検出しました。`,
     '認証セッション・Screenshot・Trace・HAR・Video などの機微な Artifact は CI から保存しない。',
     '',
     ...violations.map((violation) => formatViolationLocation(violation)),
@@ -492,7 +508,32 @@ describe('禁止パターン（誤検出・検出漏れの回帰防止）', () =
   })
 })
 
-describe('Action 定義の保存物（.github）', () => {
+describe('Action 定義ファイルのパス判定（表駆動）', () => {
+  const cases: [path: string, expected: boolean][] = [
+    // `.github/` 配下の YAML は、ワークフロー以外（設定ファイル等）も GitHub が解釈し得る
+    // ため対象にする（保守側に倒して拾う）。
+    ['.github/workflows/ci.yml', true],
+    ['.github/actions/x/action.yml', true],
+    ['.github/dependabot.yml', true],
+    // Action 定義は `.github/` の外（リポジトリ直下等）にも置かれるため、ファイル名で拾う。
+    // 名前・拡張子の大文字は小文字化して一致させる。
+    ['action.yml', true],
+    ['action.yaml', true],
+    ['nested/action.yaml', true],
+    ['ACTION.YML', true],
+    // 対象外: `.github/` の外の YAML と、Action 定義でないファイル。
+    ['foo.yml', false],
+    ['foo.yaml', false],
+    ['package.json', false],
+    ['docs/example.yml', false],
+  ]
+
+  it.each(cases)('%s → %s', (path, expected) => {
+    expect(isActionDefinitionPath(path)).toBe(expected)
+  })
+})
+
+describe('Action 定義の保存物（.github/ の YAML と action.yml / action.yaml）', () => {
   it('機微な Artifact を保存する Action がワークフローと composite action に現れない', () => {
     const actionDefinitionFiles = collectTargetFiles().filter((target) =>
       isActionDefinitionPath(target.path),
@@ -617,6 +658,39 @@ describe('保存 Action の検査（YAML パース・誤検出と検出漏れの
         '    runs-on: ubuntu-latest',
         '    steps:',
         '      - *k : actions/upload-artifact@v4',
+        '',
+      ].join('\n'),
+      [9],
+    ],
+    [
+      'キーが `:` 終わりのエイリアス（値は同一行）',
+      [
+        'name: probe',
+        'on: workflow_dispatch',
+        'env:',
+        '  KEY: &k uses',
+        'jobs:',
+        '  build:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - *k: actions/upload-artifact@v4',
+        '',
+      ].join('\n'),
+      [9],
+    ],
+    [
+      'キーが `:` 終わりのエイリアス（値は次行）',
+      [
+        'name: probe',
+        'on: workflow_dispatch',
+        'env:',
+        '  KEY: &k uses',
+        'jobs:',
+        '  build:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - *k:',
+        '        actions/upload-artifact@v4',
         '',
       ].join('\n'),
       [9],
