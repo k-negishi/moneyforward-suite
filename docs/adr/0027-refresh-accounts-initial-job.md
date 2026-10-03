@@ -1,6 +1,6 @@
 # 0027. 初期 Job を refresh-accounts（金融機関の一括更新と Suica 更新）とする
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-03
 
 ## Context
