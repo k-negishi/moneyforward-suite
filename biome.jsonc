@@ -276,10 +276,14 @@
       }
     },
     {
-      // spike CLI の標準出力は契約（1 行の status。Secret・金融データは出さない）のため許可する。
+      // CLI の標準出力は契約（status の 1 行。成功時は保存先の表示 1 行を追加。
+      // Secret・金融データは出さない）のため許可する。許可は実行エントリ（console を出力関数として
+      // 組み立てる層）に限り、判定・写像を置く session-cli.ts へは広げない。
       "includes": [
         "packages/adapter-moneyforward-playwright/src/spike/login.ts",
-        "packages/adapter-moneyforward-playwright/src/spike/refresh.ts"
+        "packages/adapter-moneyforward-playwright/src/spike/refresh.ts",
+        "packages/adapter-moneyforward-playwright/src/cli/session-login.ts",
+        "packages/adapter-moneyforward-playwright/src/cli/session-check.ts"
       ],
       "linter": {
         "rules": {
