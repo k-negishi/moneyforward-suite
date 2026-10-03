@@ -40,49 +40,29 @@ type PlaywrightStorageState = Awaited<ReturnType<BrowserContext['storageState']>
 
 /**
  * セッション状態（自前構造）を Playwright の storageState へ写す。
- * 構造は互換のため実質は値のコピーだが、境界をこの関数に閉じ、余分なフィールドを持ち込まない。
+ * 宣言済みのフィールドは型で固定し、宣言に無いフィールド（例: 分割 Cookie の partitionKey）は
+ * 保存されていた値をそのまま透過させる（往復で失わせない）。
  */
 export const toStorageState = (sessionState: SessionState): PlaywrightStorageState => ({
-  cookies: sessionState.cookies.map((cookie) => ({
-    name: cookie.name,
-    value: cookie.value,
-    domain: cookie.domain,
-    path: cookie.path,
-    expires: cookie.expires,
-    httpOnly: cookie.httpOnly,
-    secure: cookie.secure,
-    sameSite: cookie.sameSite,
-  })),
+  ...sessionState,
+  cookies: sessionState.cookies.map((cookie) => ({ ...cookie })),
   origins: sessionState.origins.map((origin) => ({
-    origin: origin.origin,
-    localStorage: origin.localStorage.map((entry) => ({
-      name: entry.name,
-      value: entry.value,
-    })),
+    ...origin,
+    localStorage: origin.localStorage.map((entry) => ({ ...entry })),
   })),
 })
 
 /**
  * Playwright の storageState を、保存用のセッション状態（自前構造）へ写す。
- * 保存する構造を自前定義に固定し、Playwright 側の型の変化が保存形式へ漏れないようにする。
+ * 宣言済みのフィールドは型で固定し、宣言に無いフィールドも保存形式へそのまま引き継ぐ
+ * （Playwright の宣言型と互換の範囲で往復させる）。
  */
 export const toSessionState = (storageState: PlaywrightStorageState): SessionState => ({
-  cookies: storageState.cookies.map((cookie) => ({
-    name: cookie.name,
-    value: cookie.value,
-    domain: cookie.domain,
-    path: cookie.path,
-    expires: cookie.expires,
-    httpOnly: cookie.httpOnly,
-    secure: cookie.secure,
-    sameSite: cookie.sameSite,
-  })),
+  ...storageState,
+  cookies: storageState.cookies.map((cookie) => ({ ...cookie })),
   origins: storageState.origins.map((origin) => ({
-    origin: origin.origin,
-    localStorage: origin.localStorage.map((entry) => ({
-      name: entry.name,
-      value: entry.value,
-    })),
+    ...origin,
+    localStorage: origin.localStorage.map((entry) => ({ ...entry })),
   })),
 })
 

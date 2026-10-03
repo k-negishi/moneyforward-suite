@@ -55,6 +55,38 @@ describe('セッション状態と Playwright storageState の相互変換', () 
     expect(toStorageState(toSessionState(storageState))).toEqual(storageState)
   })
 
+  it('宣言に無いフィールドも往復で保持する（例: 分割 Cookie の partitionKey）', () => {
+    // 保存ファイルは JSON のため、型宣言に無いフィールドも値として現れ得る。
+    const storageState = JSON.parse(
+      JSON.stringify({
+        cookies: [
+          {
+            name: 'synthetic_cookie',
+            value: 'synthetic_value',
+            domain: 'example.invalid',
+            path: '/',
+            expires: -1,
+            httpOnly: true,
+            secure: true,
+            sameSite: 'Lax',
+            partitionKey: 'https://example.invalid',
+          },
+        ],
+        origins: [
+          {
+            origin: 'https://example.invalid',
+            localStorage: [{ name: 'synthetic_key', value: 'synthetic_value' }],
+          },
+        ],
+      }),
+    ) as Parameters<typeof toSessionState>[0]
+
+    const roundTripped = toStorageState(toSessionState(storageState))
+
+    expect(roundTripped).toEqual(storageState)
+    expect(roundTripped.cookies[0]).toHaveProperty('partitionKey', 'https://example.invalid')
+  })
+
   it('空のセッション状態も往復できる', () => {
     const empty: SessionState = { cookies: [], origins: [] }
 
