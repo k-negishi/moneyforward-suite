@@ -30,6 +30,8 @@ corepack を使っていない環境では 1 行目は不要。`pnpm-lock.yaml` 
 |---|---|
 | `pnpm build` | 全 package を `tsc -b`（project references）でビルドする |
 | `pnpm typecheck` | `tsc -b` に続けて各 package を `tsc -p tsconfig.check.json`（テスト込み・emit なし）で型検査し、最後にリポジトリ横断テスト（`tests/`）を `tsc -p tests/tsconfig.check.json` で検査する |
+| `pnpm lint` | Biome で lint・整形・import 整列を検査する（書き換えなし） |
+| `pnpm format` | `pnpm lint` の検査内容を自動修正する（整形・import 整列・安全な lint 修正） |
 | `pnpm test` | Vitest で全 package のテストとリポジトリ横断の検査（`repo-policy`）を実行する |
 | `pnpm test:architecture` | Architecture Test（依存境界の検査）だけを実行する。違反時は import の `file:line` と指定子を出力する |
 | `pnpm test --project @mf-suite/automation` | 単一 project のテストだけを実行する |
@@ -67,7 +69,7 @@ pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:refresh --execute 
 
 ## 開発補助（Claude Code）
 
-実装は Claude Code を併用して進める。以下のプラグイン・MCP サーバー・カスタムエージェントは**開発時の支援のためのもので、プロダクトの機能ではなく、ビルド・テスト・実行時の依存にも含まれない**（無効化しても `pnpm build` / `pnpm test` は成立する）。
+実装は Claude Code を併用して進める。以下のプラグイン・MCP サーバー・カスタムエージェントは**開発時の支援のためのもので、プロダクトの機能ではなく、ビルド・テスト・実行時の依存にも含まれない**（無効化しても `pnpm build` / `pnpm lint` / `pnpm test` は成立する）。
 
 ### プラグイン
 

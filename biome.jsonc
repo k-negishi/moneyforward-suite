@@ -1,0 +1,360 @@
+{
+  // Biome のスキーマ URL。インストール済みの実バージョン（package.json の devDependencies）に対応させる。
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+
+  // バージョン管理との連携。.gitignore を尊重し、node_modules・dist などの除外先を
+  // Biome 設定へ二重に書かない（除外の管理を .gitignore の 1 箇所に集約する）。
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+
+  // フォーマッタは既存コードのスタイル（2 スペース・行幅 100 行）に合わせる。
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+
+  // JavaScript / TypeScript のスタイルも既存コード（シングルクォート・セミコロンなし）に合わせる。
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "asNeeded"
+    }
+  },
+
+  "linter": {
+    "enabled": true,
+    // 型情報を必要とするルール（types ドメイン）は有効化しない。負のテストで、明示的に
+    // "error" を指定した型認識ルール（noFloatingPromises / noMisusedPromises /
+    // useArraySortCompare）がドメイン無効のままでも動作することを実測確認済み。
+    // ドメインの "all" は型推論エンジンの起動コストに見合わない。
+    // ドメインを有効化するのは、推奨ルール一式をまとめて受け入れると決めたときに限る。
+    // なお test ドメインは各 package の devDependencies に vitest を検出すると自動で有効になり、
+    // noSkippedTests / noFocusedTests が効く（vitest は宣言必須。noUndeclaredDependencies が担保する）。
+    "domains": {
+      "types": "none"
+    },
+    "rules": {
+      // 土台は Biome の推奨ルール。その上で、このリポジトリで強制するルールを
+      // グループごとに個別列挙して severity を error に固定する。
+      // グループ一括の "on" や "all" を使わないのは、Biome の更新で新ルールが
+      // 勝手に有効化され、意図しない破壊を招くため（追加は必ずここで明示的に行う）。
+      "preset": "recommended",
+
+      "complexity": {
+        // 認知複雑度が上限を超える関数を検出する。分岐や入れ子が深い関数は早期に分割する。
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": { "maxAllowedComplexity": 20 }
+        },
+        // 1 関数が上限行数を超えたら検出する。長い関数はテスト・レビュー・再利用が難しい。
+        // テストは表駆動で 1 ケースが長くなるため、override で無効化する。
+        "noExcessiveLinesPerFunction": {
+          "level": "error",
+          "options": { "maxLines": 50 }
+        },
+        // !!x / +x / ~~x / x + '' などの暗黙の型変換の短縮形を検出し、
+        // Boolean() / Number() / Math.trunc() / String() への明示的な変換を促す。
+        "noImplicitCoercions": "error",
+        // void 演算子は「未処理であることを意図的に示す」用途があるため禁止しない。
+        "noVoid": "off"
+      },
+
+      "correctness": {
+        // JSDoc の可視性タグ（@private / @package）で非公開とした export の import を検出する。
+        // 既定は public 扱いのため、タグが無い現状のコードでは何も検出しないが、将来 @private を
+        // 付けた API が他 package から漏れて import される事故を防ぐ。
+        "noPrivateImports": "error",
+        // package.json に宣言していない依存の import を検出する。テストの vitest は
+        // 各 package の devDependencies に宣言する（テストファイルだけ devDependencies を
+        // 許可する運用はしない。依存関係が package.json を読めば分かる状態に保つ）。
+        // このルールは import 文のみを見るため、package.json への依存追加そのものは検出できない。
+        "noUndeclaredDependencies": "error",
+        // 未使用の import を検出して削除を強制する。
+        "noUnusedImports": "error",
+        // 未使用の変数を検出する。残す意図がある場合は命名で示す（_ 接頭辞）。
+        "noUnusedVariables": "error",
+        // 相対 import に拡張子を要求する（ESM / NodeNext の解決規則）。
+        // forceJsExtensions で「TS ソースに対しても .js を付ける」既存規約に合わせる。
+        // この指定がないと Biome は .ts への書き換えを提案し、ビルドが壊れる。
+        // これは tsc の NodeNext 検査と重複するが、編集時に即座に気づけるよう lint でも強制する。
+        "useImportExtensions": {
+          "level": "error",
+          "options": { "forceJsExtensions": true }
+        },
+        // playwright の re-export を解決できず誤検出する。TypeScript では tsc が同じ検査をするため無効。
+        "noUnresolvedImports": "off",
+        // ブラウザ向けの制約。Node.js（Lambda / CLI）で動かす本リポジトリには不適切なため無効。
+        "noNodejsModules": "off",
+        // 同上。process の使用は設定境界モジュールと起動コードに限定する規約で運用する。
+        "noProcessGlobal": "off"
+      },
+
+      "nursery": {
+        // await されていない Promise（floating promise）を検出する。失敗が無言で消える事故を防ぐ。
+        // 型情報を使うルールだが、負のテストで types ドメイン無効のままでも動作することを確認済み。
+        "noFloatingPromises": "error",
+        // Promise を真偽値などとして誤用する箇所を検出する。
+        "noMisusedPromises": "error",
+        // 危険な型アサーション（as）を検出する。実行時に壊れ得るキャストを明示的に扱わせる。
+        "noUnsafeTypeAssertion": "error",
+        // Playwright のアンチパターン検出（既定では無効のため明示的に有効化する）。
+        // 待機・検証の成功判定を壊す書き方（暗黙の待機への依存・強制操作・eval 相当）を塞ぐ。
+        "noPlaywrightElementHandle": "error",
+        "noPlaywrightEval": "error",
+        "noPlaywrightForceOption": "error",
+        "noPlaywrightMissingAwait": "error",
+        "noPlaywrightNetworkidle": "error",
+        "noPlaywrightPagePause": "error",
+        "noPlaywrightWaitForNavigation": "error",
+        "noPlaywrightWaitForSelector": "error",
+        // waitForTimeout は固定時間待機で、遅い環境では失敗し速い環境では無駄になる。
+        // deadline 付きポーリングなどの例外は理由付きの抑制コメントで許可する。
+        "noPlaywrightWaitForTimeout": "error",
+        // すべての変数へ型注釈を要求する。型推論で十分な箇所が多く可読性を下げるため無効。
+        "useExplicitType": "off",
+        // 同上。戻り値の型注釈も推論を優先する。
+        "useExplicitReturnType": "off"
+      },
+
+      "performance": {
+        // ループ内などで毎回生成される正規表現をトップレベルへ追い出す（再コンパイルの防止）。
+        "useTopLevelRegex": "error",
+        // namespace import は tree-shaking を妨げ、参照元が不透明になるため禁止する。
+        // テストの workspace 配線検証（import * as）は override で許可する。
+        "noNamespaceImport": "error",
+        // 逐次実行に意味がある箇所（ポーリング・順序保証）があり、機械的に禁止しない。
+        "noAwaitInLoops": "off"
+      },
+
+      "security": {
+        // 高エントロピー文字列から Secret の混入を検出する。既定値（41）は日本語の説明文を
+        // 誤検出し、このリポジトリでは 146 件が誤検出になって lint が機能しなかった。
+        // 60 へ引き上げると実コードの誤検出が 0 件になり、合成した AWS キー・GitHub トークン・
+        // Slack トークン・JWT 風文字列の検出を実測で確認できたため、この値で有効にする。
+        // 検出の網は補助であり、Secret の一次防衛は .local/ の分離と .gitignore、権限の運用。
+        // 正規に高エントロピーな文字列が必要な箇所（ダミー値など）は理由付きの抑制コメントを使う。
+        "noSecrets": {
+          "level": "error",
+          "options": { "entropyThreshold": 60 }
+        }
+      },
+
+      "style": {
+        // 波括弧を省略した if / for を検出する（追加行の事故を防ぐ）。
+        "useBlockStatements": "error",
+        // 再代入されない let を const にさせる。
+        "useConst": "error",
+        // 型のみの import / export に type 修飾を強制する（実行時の import を減らす）。
+        "useImportType": "error",
+        "useExportType": "error",
+        // Node.js 組み込みモジュールに node: プロトコルを強制する（通常の npm パッケージとの混同を防ぐ）。
+        "useNodejsImportProtocol": "error",
+        // Array<T> ではなく T[] に統一する。
+        "useConsistentArrayType": {
+          "level": "error",
+          "options": { "syntax": "shorthand" }
+        },
+        // 数値リテラルの桁区切りを統一する（既定では 5 桁以上は `_` で区切り、短い数値には付けない）。
+        // 桁の読み違いによる事故を防ぐ。
+        "useNumericSeparators": "error",
+        // ファイル名は kebab-case / camelCase に統一する（OS 間の可搬性と import の一貫性）。
+        "useFilenamingConvention": "error",
+        // 命名規約。既定の camelCase 強制に加え、オブジェクトリテラルのキーは CONSTANT_CASE も許可する
+        // （終了コード表・定数マップなど。この指定により objectLiteralProperty の camelCase 強制は
+        // 緩くなるトレードオフを受け入れる）。
+        "useNamingConvention": {
+          "level": "error",
+          "options": {
+            "conventions": [
+              {
+                "selector": { "kind": "objectLiteralProperty" },
+                "formats": ["camelCase", "CONSTANT_CASE"]
+              }
+            ]
+          }
+        },
+        // 1 ファイルが上限行数を超えたら検出する（実測 1 件。テストは override で無効化する）。
+        "noExcessiveLinesPerFile": {
+          "level": "error",
+          "options": { "maxLines": 300 }
+        },
+        // 意味を持たない数値リテラルを検出する。権限ビットなどは名前付き定数にする。
+        // 既定で許容される値は 0 / 1 / 2 / 10 / 24 / 60（実測）。それ以外は定数化する。
+        "noMagicNumbers": "error",
+        // 入れ子の三項演算子を検出する（読み順が追えなくなるため分割する）。
+        "noNestedTernary": "error",
+        // 引数への再代入を検出する（呼び出し元から渡された値の書き換えは追跡が難しい）。
+        "noParameterAssign": "error",
+        // 既定 export を禁止する（import 側の名前が揺れ、リネームが追えなくなる）。
+        // 設定ファイルは override で許可する（ツールが既定 export を要求するため）。
+        "noDefaultExport": "error",
+        // process.env の直接参照を禁止する（設定の読み取りは境界モジュールに閉じる）。
+        // spike の設定モジュールとテストは override で許可する。
+        "noProcessEnv": "error",
+        // 三項演算子自体は禁止しない（入れ子のみ noNestedTernary で禁止する）。
+        "noTernary": "off",
+        // continue はガード節の代替として可読性を下げない箇所があるため禁止しない。
+        "noContinue": "off",
+        // export をファイル末尾に集める規約は強制しない（定義元の近くに置くことを優先する）。
+        "useExportsLast": "off"
+      },
+
+      "suspicious": {
+        // any の明示使用を禁止する（型安全の穴。unknown と適切な絞り込みを使う）。
+        "noExplicitAny": "error",
+        // 初期化のない let（暗黙 any）を検出する。
+        "noImplicitAnyLet": "error",
+        // await を含まない async 関数を検出する（async を外すか await を足す）。
+        "useAwait": "error",
+        // Promise の入れ子を検出する（then の中の then は順序と失敗の追跡を難しくする）。
+        "noNestedPromises": "error",
+        // console の使用を検出する。CLI（spike）は標準出力が契約のため override で許可する。
+        "noConsole": "error",
+        // 空のブロックを検出する（意図的な空はコメントで示す。エラーの握りつぶしを防ぐ）。
+        "noEmptyBlockStatements": "error",
+        // 結果を使わない式文を検出する（書き忘れ・デッドコードの検出）。
+        "noUnusedExpressions": "error",
+        // import の循環を検出する（初期化順序と依存の絡みを防ぐ）。
+        "noImportCycles": "error",
+        // skip / only の付いたテストを検出する（CI が気づけないテストの無効化・一部実行を防ぐ）。
+        // どちらも各 package が vitest を宣言すると自動で有効になる test ドメインのルール。
+        "noSkippedTests": "error",
+        "noFocusedTests": "error",
+        // 比較関数なしの sort を検出する（数値配列では辞書順になり誤り。既定で実バグ 2 件を検出）。
+        "useArraySortCompare": "error",
+        // ビット演算子を検出する（& と && の取り違えなど事故のもと）。
+        // POSIX 権限ビットの検査をするファイルは override で & のみ許可する。
+        "noBitwiseOperators": "error",
+        // Vitest の it.skipIf(条件)(...) をテスト外の assertion と誤判定する（実測で全件誤検出）。
+        // ルールに options がなく誤検出を回避できないため無効。assertion の配置はレビューで見る。
+        "noMisplacedAssertion": "off"
+      }
+    }
+  },
+
+  "overrides": [
+    {
+      // 設定ファイルは既定 export を要求するツールがあるため許可する。
+      "includes": ["**/*.config.ts"],
+      "linter": {
+        "rules": {
+          "style": { "noDefaultExport": "off" }
+        }
+      }
+    },
+    {
+      // テストは環境変数の差し替え・namespace import（workspace 配線の検証）・
+      // 表駆動テストによる長いブロックを許容する。
+      "includes": ["**/test/**", "tests/**"],
+      "linter": {
+        "rules": {
+          "complexity": { "noExcessiveLinesPerFunction": "off" },
+          "performance": { "noNamespaceImport": "off" },
+          "style": {
+            "noExcessiveLinesPerFile": "off",
+            "noProcessEnv": "off"
+          }
+        }
+      }
+    },
+    {
+      // spike CLI の標準出力は契約（1 行の status。Secret・金融データは出さない）のため許可する。
+      "includes": [
+        "packages/adapter-moneyforward-playwright/src/spike/login.ts",
+        "packages/adapter-moneyforward-playwright/src/spike/refresh.ts"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": { "noConsole": "off" }
+        }
+      }
+    },
+    {
+      // 環境変数の読み取りを設定境界モジュールに閉じるための唯一の許可箇所。
+      "includes": ["packages/adapter-moneyforward-playwright/src/spike/config.ts"],
+      "linter": {
+        "rules": {
+          "style": { "noProcessEnv": "off" }
+        }
+      }
+    },
+    {
+      // POSIX 権限ビットの検査にはビット演算が必要なため、& のみ許可する。
+      "includes": [
+        "packages/adapter-moneyforward-playwright/src/spike/session.ts",
+        "packages/adapter-moneyforward-playwright/test/session.test.ts"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noBitwiseOperators": {
+              "level": "error",
+              "options": { "allow": ["&"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      // Core は Framework / Runtime 非依存に保つ（ADR-0006）。Runtime / Framework 依存の
+      // import を分類ごとのメッセージ付きで機械的に塞ぐ。Architecture Test は未実装のため、
+      // 現時点で Core への混入を編集時に止めるのはこのルールのみである（import 文のみを検査する
+      // ため、package.json への依存追加は検出できない）。
+      "includes": ["packages/core/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "playwright",
+                      "playwright/*",
+                      "playwright-core",
+                      "playwright-*",
+                      "@playwright/*",
+                      "puppeteer",
+                      "puppeteer-*",
+                      "selenium-webdriver"
+                    ],
+                    "message": "Core へブラウザ自動化の依存を持ち込まない。ブラウザ操作は Adapter 側に置く。"
+                  },
+                  {
+                    "group": ["@aws-sdk/*", "aws-sdk", "@smithy/*", "aws-cdk-lib", "@aws-cdk/*"],
+                    "message": "Core へ AWS SDK・CDK を持ち込まない（EC2 クライアントを含む）。AWS 依存は Adapter 側に置く。"
+                  },
+                  {
+                    "group": ["aws-lambda", "@types/aws-lambda", "@aws-lambda-powertools/*"],
+                    "message": "Core へ Lambda ランタイムの依存を持ち込まない。起動コードは Application 側に置く。"
+                  },
+                  {
+                    "group": ["appium", "appium-*", "webdriverio", "@wdio/*"],
+                    "message": "Core へモバイル自動化の依存を持ち込まない。"
+                  },
+                  {
+                    "group": ["uiautomator2"],
+                    "message": "Core へ UIAutomator2 の依存を持ち込まない。"
+                  },
+                  {
+                    "group": ["android", "android-*", "adb"],
+                    "message": "Core へ Android SDK・ツールの依存を持ち込まない。"
+                  },
+                  {
+                    "group": ["express", "fastify", "hono", "koa", "@nestjs/*"],
+                    "message": "Core へ Web Framework を持ち込まない。HTTP の処理は Adapter 側に置く。"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
