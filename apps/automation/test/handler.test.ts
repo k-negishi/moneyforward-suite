@@ -187,6 +187,34 @@ describe('Automation Handler', () => {
     expect(executor.inputs).toHaveLength(0)
   })
 
+  it('入力の読み取りで例外が起きても UNKNOWN へ写す（Router も try の保護対象）', async () => {
+    const executor = createExecutor(() => Promise.resolve({ status: 'SUCCESS' }))
+    const session = createSessionProvider(resolveSession)
+    const handler = createAutomationHandler({
+      executors: { 'refresh-accounts': executor },
+      sessionProvider: session.provider,
+    })
+    // 余剰フィールド検査は通るが、job の値の読み取りで例外を投げる入力。
+    const throwingInput = new Proxy(
+      { job: 'refresh-accounts' },
+      {
+        get(target, property, receiver): unknown {
+          if (property === 'job') {
+            throw new Error(ERROR_MARKER)
+          }
+          return Reflect.get(target, property, receiver)
+        },
+      },
+    )
+
+    const result = await handler(throwingInput)
+
+    expect(result).toEqual({ status: 'FAILURE', errorCode: 'UNKNOWN' })
+    expect(JSON.stringify(result)).not.toContain(ERROR_MARKER)
+    expect(session.callCount()).toBe(0)
+    expect(executor.inputs).toHaveLength(0)
+  })
+
   it('出力は status と errorCode だけの契約で、セッションの内容を含まない', async () => {
     const executor = createExecutor(() => Promise.resolve({ status: 'SUCCESS' }))
     const session = createSessionProvider(resolveSession)
