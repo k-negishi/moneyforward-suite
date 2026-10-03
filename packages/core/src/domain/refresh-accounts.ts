@@ -50,7 +50,8 @@ export type ApplicationResult =
 /**
  * 一括更新の観測結果を Application Result へ写像する（純関数）。
  * 認証セッションの失効を最優先で失敗にする（fail closed。受付の有無によらず停止する）。
- * 受付が確認できない場合は、失敗の観測があれば明示的な拒否（再試行しても回復しない）、
+ * 受付は ACCEPTED 以外（語彙外れの値を含む）をすべて「確認できない」ものとして失敗側に倒し、
+ * そのうち失敗の観測があれば明示的な拒否（再試行しても回復しない）、
  * 観測がなければ受付確認不能（一時障害の可能性があるため再試行する）として区別する。
  * 一部の行だけが失敗した場合は部分成功とし、errorCode を付けない
  * （部分失敗を再試行の対象にするかは Use Case 側の判断として残す）。
@@ -60,7 +61,8 @@ export type ApplicationResult =
 export const toApplicationResult = (outcome: RefreshAccountsOutcome): ApplicationResult => {
   if (outcome.authLost) return { status: 'FAILURE', errorCode: 'AUTH_REQUIRED' }
 
-  if (outcome.acceptance === 'NOT_ACCEPTED') {
+  // 判定は ACCEPTED との比較で行い、受付の語彙が増えても受付側へ倒れないようにする（fail closed）。
+  if (outcome.acceptance !== 'ACCEPTED') {
     return outcome.evidence.failedRowCount > 0
       ? { status: 'FAILURE', errorCode: 'REFRESH_REJECTED' }
       : { status: 'FAILURE', errorCode: 'REFRESH_NOT_ACCEPTED' }

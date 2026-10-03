@@ -102,6 +102,17 @@ describe('RefreshAccountsUseCase', () => {
       expect(result).toEqual({ status: 'FAILURE', errorCode: 'TEMPORARY_FAILURE' })
       expect(moneyForward.refreshCalls).toHaveLength(0)
     })
+
+    it('検証の語彙外れの値（キャスト混入）も fail closed で停止し、一括更新を試行しない', async () => {
+      const { useCase, moneyForward } = createHarness()
+      // Adapter 境界で語彙外れの値がキャスト混入した場合を模す（停止側へ倒れることの回帰テスト）。
+      moneyForward.verification = 'SESSION_EXPIRED' as unknown as SessionVerification
+
+      const result = await useCase.execute({ session: createSession(), attempt: 1 })
+
+      expect(result).toEqual({ status: 'FAILURE', errorCode: 'TEMPORARY_FAILURE' })
+      expect(moneyForward.refreshCalls).toHaveLength(0)
+    })
   })
 
   describe('受付・結果の写像', () => {

@@ -25,12 +25,19 @@ const LOG_APPLICATION: LogApplication = 'automation'
 const LOG_JOB: LogJob = 'refresh-accounts'
 
 /**
+ * 開始時刻からの経過ミリ秒を非負の整数に丸めて返す。
+ * 単調時計を使い、ログの durationMs が負の値にならないようにする。
+ */
+const elapsedMs = (startedAt: number): number =>
+  Math.max(0, Math.round(performance.now() - startedAt))
+
+/**
  * 金融機関のデータ一括更新を 1 回だけ実行し、Application Result へ写像する Use Case。
  *
  * 1 回の execute は次の流れで進む。
  *
  * 1. 開始ログを記録する（開始時点では durationMs に意味のある値がないため 0）。
- * 2. セッションを検証する。認証要求・判定不能なら一括更新を試行せず fail closed で失敗を返す。
+ * 2. セッションを検証する。VALID 以外は一括更新を試行せず fail closed で失敗を返す。
  * 3. 一括更新を 1 回だけ呼び、受付・結果を Application Result へ写像する。
  * 4. 実行時間を計測し、完了ログを 1 回だけ記録する（失敗時は errorCode を付ける）。
  *
@@ -48,7 +55,7 @@ export class RefreshAccountsUseCase {
 
   /** 1 回の試行を実行する。再試行の判断・待機は呼び出し側（実行基盤）が行う。 */
   async execute(input: RefreshAccountsInput): Promise<ApplicationResult> {
-    const startedAt = Date.now()
+    const startedAt = performance.now()
     this.writeLog({ status: 'STARTED', attempt: input.attempt, durationMs: 0 })
 
     const result = await this.refreshOnce(input.session)
@@ -56,7 +63,7 @@ export class RefreshAccountsUseCase {
     this.writeLog({
       status: result.status,
       attempt: input.attempt,
-      durationMs: Date.now() - startedAt,
+      durationMs: elapsedMs(startedAt),
       ...(result.status === 'FAILURE' ? { errorCode: result.errorCode } : {}),
     })
 
@@ -65,19 +72,18 @@ export class RefreshAccountsUseCase {
 
   /**
    * セッションを検証してから一括更新を 1 回だけ呼ぶ。
-   * 検証が VALID でなければ一括更新は呼ばない。認証要求（再ログインというユーザー操作が
-   * 要る）は再試行しても回復しないため AUTH_REQUIRED、判定不能は一時障害の可能性を
-   * 許すため TEMPORARY_FAILURE として、いずれも安全側（停止）に倒す。
+   * VALID 以外は一括更新を呼ばずに失敗を返す。認証要求（再ログインというユーザー操作が
+   * 要る）だけは AUTH_REQUIRED、判定不能や語彙外れの値は一時障害の可能性を許す
+   * TEMPORARY_FAILURE として、いずれも安全側（停止）に倒す。
+   * 判定は VALID との比較で行い、検証結果の語彙が増えても停止側へ倒れるようにする。
    */
   private async refreshOnce(session: AuthSession): Promise<ApplicationResult> {
     const verification = await this.moneyForward.verifySession(session)
 
-    if (verification === 'AUTH_REQUIRED') {
-      return toFailureResult(createDomainError('AUTH_REQUIRED'))
-    }
-
-    if (verification === 'UNKNOWN') {
-      return toFailureResult(createDomainError('TEMPORARY_FAILURE'))
+    if (verification !== 'VALID') {
+      return toFailureResult(
+        createDomainError(verification === 'AUTH_REQUIRED' ? 'AUTH_REQUIRED' : 'TEMPORARY_FAILURE'),
+      )
     }
 
     const refresh = await this.moneyForward.refreshAccounts(session)
