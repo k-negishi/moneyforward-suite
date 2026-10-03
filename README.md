@@ -32,7 +32,7 @@ corepack を使っていない環境では 1 行目は不要。`pnpm-lock.yaml` 
 | `pnpm typecheck` | `tsc -b` に続けて各 package を `tsc -p tsconfig.check.json`（テスト込み・emit なし）で型検査し、最後にリポジトリ横断テスト（`tests/`）を `tsc -p tests/tsconfig.check.json` で検査する |
 | `pnpm lint` | Biome で lint・整形・import 整列を検査する（書き換えなし） |
 | `pnpm format` | `pnpm lint` の検査内容を自動修正する（整形・import 整列・安全な lint 修正） |
-| `pnpm test` | Vitest で全 package のテストとリポジトリ横断の検査（`repo-policy`）を実行する |
+| `pnpm test` | Vitest で全 package のテストとリポジトリ横断の検査（`repo-policy`）を実行する。Adapter のブラウザテストは実 chromium を使うため、初回は事前取得が必要（下記「実装時の注意」を参照） |
 | `pnpm test:architecture` | Architecture Test（依存境界の検査）だけを実行する。違反時は import の `file:line` と指定子を出力する |
 | `pnpm test --project @mf-suite/automation` | 単一 project のテストだけを実行する |
 | `pnpm --filter @mf-suite/core build` | workspace 単位で実行する（各 package が `build` / `typecheck` / `test` を持つ） |
@@ -64,7 +64,7 @@ pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:refresh --execute 
 - 相対 import には `.js` 拡張子を付ける（ESM / NodeNext の解決規則）。package 間 import を追加したら、`tsconfig.json` の `references` と `tsconfig.check.json` の `paths`（tsconfig ファイルの位置基準）も更新する。
 - `packages/core` は Framework / Runtime 非依存。playwright / aws-sdk / appium 等を持ち込まない（[ADR-0006](docs/adr/0006-core-runtime-independence.md)）。
 - テストは各 package の `test/`（`src/` の外）に置く。ビルドに含まれず `dist` へ出ず、型検査は `tsconfig.check.json` が対象にする。`@mf-suite/*` の package 名 import は、テスト実行時に `vitest.config.ts` の alias で各 package の `src/index.ts` へ解決される（テストはビルド不要）。リポジトリ横断の検査は `tests/`（workspace package ではない）に置き、vitest の `repo-policy` プロジェクトで実行され、型検査は `tests/tsconfig.check.json` が対象にする。
-- Playwright のブラウザ取得は `pnpm --filter @mf-suite/adapter-moneyforward-playwright exec playwright install chromium` で行う（spike の実行前に必要）。
+- Playwright のブラウザ取得は `pnpm --filter @mf-suite/adapter-moneyforward-playwright exec playwright install chromium` で行う（Adapter のブラウザテストと spike の実行前に必要）。テストは合成 HTML のみを描画し、実サービスへは接続しない。
 - CLI を実行する script（例: `spike:refresh`）は `pnpm build` を前置する（ビルド忘れで古い `dist` を実行する事故を防ぐ。実装は PoC 実装で行う）。
 
 ## 開発補助（Claude Code）
