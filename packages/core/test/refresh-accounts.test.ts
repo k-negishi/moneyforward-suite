@@ -9,6 +9,7 @@ import {
 import type {
   ApplicationResult,
   ErrorCode,
+  RefreshAcceptance,
   RefreshAccountsEvidence,
   RefreshAccountsOutcome,
 } from '../src/index.js'
@@ -105,6 +106,27 @@ describe('toApplicationResult', () => {
     )
     expect(result).toEqual({ status: 'FAILURE', errorCode: 'REFRESH_REJECTED' })
     expect(result.status === 'FAILURE' && isRetryableErrorCode(result.errorCode)).toBe(false)
+  })
+
+  it('受付は ACCEPTED 以外（語彙外れの値を含む）を失敗側に倒し、合法値の写像は変えない', () => {
+    // 合法値の回帰（反転しても ACCEPTED は成功、NOT_ACCEPTED は受付確認不能のまま）。
+    expect(toApplicationResult(createOutcome({ acceptance: 'ACCEPTED' }))).toEqual({
+      status: 'SUCCESS',
+    })
+    expect(toApplicationResult(createOutcome({ acceptance: 'NOT_ACCEPTED' }))).toEqual({
+      status: 'FAILURE',
+      errorCode: 'REFRESH_NOT_ACCEPTED',
+    })
+
+    // Adapter の語彙が増え、キャストで語彙外れの値が混入した場合を模す（fail closed の回帰テスト）。
+    const forged = 'PENDING' as unknown as RefreshAcceptance
+    expect(toApplicationResult(createOutcome({ acceptance: forged }))).toEqual({
+      status: 'FAILURE',
+      errorCode: 'REFRESH_NOT_ACCEPTED',
+    })
+    expect(
+      toApplicationResult(createOutcome({ acceptance: forged, evidence: { failedRowCount: 1 } })),
+    ).toEqual({ status: 'FAILURE', errorCode: 'REFRESH_REJECTED' })
   })
 
   it('受付は確認できたが全ての行が失敗した場合は失敗とする', () => {
