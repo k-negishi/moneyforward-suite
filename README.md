@@ -49,6 +49,43 @@ pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:refresh   # 一括
 pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:refresh --execute   # 一括更新を実行し、行ごとの変化（更新日時など）から受付を確認する（pnpm では引数を直接渡す）
 ```
 
+### 手動ログインとセッションの再生成（session CLI）
+
+MoneyForward ME の操作には認証済みセッションが必要になる。Password はシステムが扱わず、ローカルで手動ログインして生成したセッションを再利用する。セッション失効時は自動復旧せず、AUTH_REQUIRED として停止する。先に `pnpm --filter @mf-suite/adapter-moneyforward-playwright exec playwright install chromium` でブラウザを取得しておく。
+
+```sh
+pnpm --filter @mf-suite/adapter-moneyforward-playwright session:login   # headed で手動ログインし、セッションを保存する
+pnpm --filter @mf-suite/adapter-moneyforward-playwright session:check   # 保存済みセッションの有効性を確認する（headless）
+```
+
+`session:login` は headed ブラウザでログイン画面を開く。CAPTCHA・ワンタイムパスワード・新端末確認は自動回避しないため、ユーザー自身で対応し、完了後にターミナルで Enter を押す。認証済みと確認できた場合だけセッションを保存し、確認できない場合は保存せず `status=AUTH_REQUIRED` で停止する（終了コード 2）。
+
+セッションの保存先と権限は次のとおり（ファイルの権限が緩い場合は読み込み時に拒否する = fail closed）。
+
+| 項目 | 内容 |
+|---|---|
+| 既定の保存先 | `.local/moneyforward-session.json`（git 管理外） |
+| 上書き | 環境変数 `MF_SESSION_FILE` に絶対パスを指定する（相対パスは受け付けない） |
+| 権限 | ファイル 0600・新規作成するディレクトリ 0700（既存ディレクトリの権限は変更しない） |
+
+`session:check` は保存済みセッションを読み込み、有効性を確認する。`status=...` を stdout に出し、状態に応じた終了コードで停止する。
+
+| status | 終了コード | 意味と対処 |
+|---|---|---|
+| `SESSION_VALID` | 0 | 有効。そのまま実行できる |
+| `SESSION_MISSING` | 1 | セッションが無い。`session:login` で生成する |
+| `SESSION_INVALID` | 1 | 破損、または他ユーザーが読める権限。`session:login` で作り直す |
+| `AUTH_REQUIRED` | 2 | 失効。`session:login` で再生成する |
+| `TEMPORARY_FAILURE` | 1 | 判定不能（通信・ページ取得の失敗など）。時間を置いて再実行する |
+
+失効・欠如・破損のときは、再生成のコマンドを stderr に固定文言で案内する（stdout は `status=...` の 1 行のまま）。Cookie・セッショントークンの値はどの出力にも含めない。
+
+トラブルシュート:
+
+- `session:check` が `SESSION_INVALID` になる: ファイルの権限が 0600 か（`ls -l .local/`）と、内容が Playwright の storageState 形式かを確認し、`session:login` で作り直す。
+- `session:login` が `status=AUTH_REQUIRED` で終わる: ログインが完了していない（Enter 前の中断・EOF）、または認証チャレンジの検知。ブラウザでログインを完了してから再実行する。
+- `session:check` が `TEMPORARY_FAILURE` になる: セッションの有効性を判定できていない。ネットワークと MoneyForward ME の状態を確認して再実行する。
+
 ## workspace 構成
 
 - `apps/automation`（`@mf-suite/automation`）— 実行エントリ。handler / composition-root / job-router / cli は PoC 実装で追加する
