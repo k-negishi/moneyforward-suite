@@ -15,6 +15,7 @@ import type { SessionState } from './session-state.js'
  * この関数を通した値だけが Port（core）の契約を満たす。
  */
 export const toAuthSession = (sessionState: SessionState): AuthSession =>
+  // biome-ignore lint/nursery/noUnsafeTypeAssertion: AuthSession のブランドは core の公開 API から export されず、境界を跨ぐ構築をこの変換に閉じる（ADR-0032）。
   sessionState as unknown as AuthSession
 
 /**
@@ -22,4 +23,5 @@ export const toAuthSession = (sessionState: SessionState): AuthSession =>
  * 取り出した内容は Secret のため、ログ・エラー・標準出力へ出さない。
  */
 export const fromAuthSession = (session: AuthSession): SessionState =>
+  // biome-ignore lint/nursery/noUnsafeTypeAssertion: ブランド付きの AuthSession から中身を取り出せるのは、この変換（永続化の境界）に閉じた経路だけにする（ADR-0032）。
   session as unknown as SessionState

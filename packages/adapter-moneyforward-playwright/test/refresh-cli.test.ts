@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-
-import { EXIT_CODE_BY_STATUS, parseRefreshArgs, toSpikeStatus } from '../src/cli/refresh-cli.js'
 import type { SpikeStatus } from '../src/cli/refresh-cli.js'
+import { EXIT_CODE_BY_STATUS, parseRefreshArgs, toSpikeStatus } from '../src/cli/refresh-cli.js'
 import type { RefreshObservation } from '../src/moneyforward/page-client.js'
 
 // CLI の引数と終了コードの契約を固定する（既定の反転・矛盾指定の見逃しを検出する）。
@@ -56,7 +55,7 @@ describe('parseRefreshArgs', () => {
 
 describe('EXIT_CODE_BY_STATUS', () => {
   it('すべての状態に終了コードを定義する（判定成功 = 0、認証が必要 = 2、その他 = 1）', () => {
-    expect(Object.keys(EXIT_CODE_BY_STATUS).sort()).toEqual(
+    expect(Object.keys(EXIT_CODE_BY_STATUS).sort((a, b) => a.localeCompare(b))).toEqual(
       [
         'AUTH_REQUIRED',
         'REFRESH_ACCEPTED',
@@ -66,7 +65,7 @@ describe('EXIT_CODE_BY_STATUS', () => {
         'TARGET_AMBIGUOUS',
         'TARGET_NOT_FOUND',
         'TEMPORARY_FAILURE',
-      ].sort(),
+      ].sort((a, b) => a.localeCompare(b)),
     )
   })
 

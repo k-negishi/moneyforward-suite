@@ -11,9 +11,8 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname } from 'node:path'
-
-import { isSessionState } from './session-state.js'
 import type { SessionState } from './session-state.js'
+import { isSessionState } from './session-state.js'
 
 /**
  * 認証セッション（Cookie と localStorage）の保存と読込。
@@ -27,6 +26,10 @@ export type SessionLoadResult =
   | { readonly status: 'SESSION_MISSING' }
   | { readonly status: 'SESSION_INVALID' }
 
+/** セッションファイルとそのディレクトリの権限（owner のみ読み書き。group / other へは与えない）。 */
+const SESSION_FILE_MODE = 0o600
+const SESSION_DIRECTORY_MODE = 0o700
+
 /**
  * セッションファイルを読み込む。
  * ファイル欠如は SESSION_MISSING、読込失敗・JSON 破損・形の不一致は SESSION_INVALID を返す。
@@ -35,12 +38,16 @@ export type SessionLoadResult =
  * 例外内容は返さない（JSON.parse のエラーメッセージは入力の断片を含み得るため）。
  */
 export const readSessionFile = (filePath: string): SessionLoadResult => {
-  if (!existsSync(filePath)) return { status: 'SESSION_MISSING' }
+  if (!existsSync(filePath)) {
+    return { status: 'SESSION_MISSING' }
+  }
 
   // Windows は POSIX の権限ビットを再現しないため、この検査は行わない。
   if (process.platform !== 'win32') {
     try {
-      if ((statSync(filePath).mode & 0o077) !== 0) return { status: 'SESSION_INVALID' }
+      if ((statSync(filePath).mode & 0o077) !== 0) {
+        return { status: 'SESSION_INVALID' }
+      }
     } catch {
       // stat に失敗する場合（破損・権限なし）も読込失敗として扱う。
       return { status: 'SESSION_INVALID' }
@@ -61,7 +68,9 @@ export const readSessionFile = (filePath: string): SessionLoadResult => {
     return { status: 'SESSION_INVALID' }
   }
 
-  if (!isSessionState(parsed)) return { status: 'SESSION_INVALID' }
+  if (!isSessionState(parsed)) {
+    return { status: 'SESSION_INVALID' }
+  }
   return { status: 'OK', sessionState: parsed }
 }
 
@@ -76,13 +85,13 @@ export const readSessionFile = (filePath: string): SessionLoadResult => {
  */
 export const saveSessionState = (filePath: string, sessionState: SessionState): void => {
   const directory = dirname(filePath)
-  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  mkdirSync(directory, { recursive: true, mode: SESSION_DIRECTORY_MODE })
 
   const temporaryPath = `${filePath}.${randomUUID()}.tmp`
   let descriptor: number | null = null
   try {
     // 'wx' は既存ファイル・symlink があれば EEXIST で失敗する（追従しない）。
-    descriptor = openSync(temporaryPath, 'wx', 0o600)
+    descriptor = openSync(temporaryPath, 'wx', SESSION_FILE_MODE)
     writeFileSync(descriptor, `${JSON.stringify(sessionState, null, 2)}\n`)
     closeSync(descriptor)
     descriptor = null

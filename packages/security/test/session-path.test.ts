@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
-  SESSION_FILE_ENV_VAR,
   formatSessionPathForDisplay,
   resolveSessionFilePath,
+  SESSION_FILE_ENV_VAR,
 } from '../src/session/session-path.js'
 
 // 一時パスのみを使う（実際の .local/ には触れない）。
@@ -16,8 +16,11 @@ describe('resolveSessionFilePath', () => {
   const originalValue = process.env[SESSION_FILE_ENV_VAR]
 
   afterEach(() => {
-    if (originalValue === undefined) delete process.env[SESSION_FILE_ENV_VAR]
-    else process.env[SESSION_FILE_ENV_VAR] = originalValue
+    if (originalValue === undefined) {
+      delete process.env[SESSION_FILE_ENV_VAR]
+    } else {
+      process.env[SESSION_FILE_ENV_VAR] = originalValue
+    }
   })
 
   it('MF_SESSION_FILE が絶対パスならそれを優先する', () => {
@@ -47,9 +50,13 @@ describe('formatSessionPathForDisplay', () => {
   const repositoryRoot = ((): string => {
     let current = dirname(fileURLToPath(import.meta.url))
     for (;;) {
-      if (existsSync(join(current, 'pnpm-workspace.yaml'))) return current
+      if (existsSync(join(current, 'pnpm-workspace.yaml'))) {
+        return current
+      }
       const parent = dirname(current)
-      if (parent === current) throw new Error('リポジトリルートを特定できません')
+      if (parent === current) {
+        throw new Error('リポジトリルートを特定できません')
+      }
       current = parent
     }
   })()

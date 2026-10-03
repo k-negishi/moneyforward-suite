@@ -1,19 +1,21 @@
 import { describe, expect, it } from 'vitest'
-
+import type { LocatorRoot } from '../src/moneyforward/locators.js'
 import {
   AUTH_CHALLENGE_INPUT_SELECTOR,
   BULK_UPDATE_CONTROL_NAME_CANDIDATES,
   BULK_UPDATE_CONTROL_STRATEGIES,
-  ROW_UPDATE_CONTROL_NAME_PATTERN,
   containsAuthChallenge,
   isAuthChallengeDetected,
   isSignInUrl,
+  ROW_UPDATE_CONTROL_NAME_PATTERN,
 } from '../src/moneyforward/locators.js'
-import type { LocatorRoot } from '../src/moneyforward/locators.js'
+
+/** 一括更新コントロールの探索が呼ぶ role 指定（テキスト・属性のフォールバックを禁じる）。 */
+const BULK_UPDATE_ROLE_CALL_PATTERN = /^getByRole:(button|link)$/
 
 // 合成した文言のみを使う（本番の DOM / HTML は使わない）。
 describe('containsAuthChallenge', () => {
-  const cases: Array<[string, boolean]> = [
+  const cases: [string, boolean][] = [
     // 入力要求の具体的な文言（検知する）
     ['ワンタイムパスワードを入力してください', true],
     ['確認コードを入力', true],
@@ -95,7 +97,7 @@ describe('BULK_UPDATE_CONTROL_STRATEGIES', () => {
       strategy(root)
 
       expect(calls).toHaveLength(1)
-      expect(calls[0]).toMatch(/^getByRole:(button|link)$/)
+      expect(calls[0]).toMatch(BULK_UPDATE_ROLE_CALL_PATTERN)
     }
   })
 
@@ -108,9 +110,9 @@ describe('BULK_UPDATE_CONTROL_STRATEGIES', () => {
 
 describe('isAuthChallengeDetected', () => {
   it('可視の入力欄があれば検知する', () => {
-    expect(isAuthChallengeDetected({ visibleText: 'ようこそ', visibleChallengeInputCount: 1 })).toBe(
-      true,
-    )
+    expect(
+      isAuthChallengeDetected({ visibleText: 'ようこそ', visibleChallengeInputCount: 1 }),
+    ).toBe(true)
   })
 
   it('入力欄がなく、入力要求の文言もなければ検知しない', () => {

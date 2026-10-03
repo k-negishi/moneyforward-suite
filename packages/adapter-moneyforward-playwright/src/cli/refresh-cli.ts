@@ -86,7 +86,9 @@ export const toSpikeStatus = (
     case 'AVAILABLE':
       return 'REFRESH_AVAILABLE'
     case 'OBSERVED':
-      if (outcome.observation.authLost) return 'AUTH_REQUIRED'
+      if (outcome.observation.authLost) {
+        return 'AUTH_REQUIRED'
+      }
       return outcome.observation.acceptance === 'ACCEPTED'
         ? 'REFRESH_ACCEPTED'
         : 'TEMPORARY_FAILURE'

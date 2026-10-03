@@ -81,6 +81,57 @@ export const isRowSnapshotValid = (rows: readonly string[]): boolean =>
   rows.length > 0 && !hasEmptyRow(rows)
 
 /**
+ * クリック後に新しく現れた失敗マーカーがあるか。
+ * クリック前の行に無かった失敗マーカーが現れた場合のみ真とする（行に前からある失敗表示を
+ * 反応と誤認しない）。クリック前の行が無い新規行は、含まれるマーカーを出現として扱う。
+ */
+const hasNewFailureMarker = (before: string | undefined, after: string): boolean => {
+  const afterNormalized = normalizeText(after)
+  if (before === undefined) {
+    return containsFailureMarker(afterNormalized)
+  }
+  const beforeNormalized = normalizeText(before)
+  return FAILURE_PATTERNS.some(
+    (pattern) => pattern.test(afterNormalized) && !pattern.test(beforeNormalized),
+  )
+}
+
+/** 1 行分の比較結果（件数と真偽値のみ。行テキストは返さない）。 */
+interface RowChangeDelta {
+  readonly changed: boolean
+  readonly inProgressAppeared: boolean
+  readonly failureAppeared: boolean
+}
+
+/**
+ * 1 行分の変化を比較する。失敗マーカーの出現は受付の根拠にせず、基準（クリック前）に
+ * 失敗表示がある行は変化として数えない（fail closed の方針は detectRowChanges を参照）。
+ */
+const compareRow = (before: string | undefined, after: string | undefined): RowChangeDelta => {
+  const failureAppeared = after !== undefined && hasNewFailureMarker(before, after)
+
+  // 行数の増加で新しく現れた行は変化として数える（減少は detectRowChanges が先に無効化する）。
+  if (before === undefined || after === undefined) {
+    return {
+      changed: true,
+      inProgressAppeared: after !== undefined && hasInProgressSignal(after),
+      failureAppeared,
+    }
+  }
+
+  // クリック前から失敗表示の行は、文言が変化しても受付の根拠にしない（fail closed）。
+  if (containsFailureMarker(normalizeText(before))) {
+    return { changed: false, inProgressAppeared: false, failureAppeared }
+  }
+
+  return {
+    changed: normalizeText(before) !== normalizeText(after),
+    inProgressAppeared: !hasInProgressSignal(before) && hasInProgressSignal(after),
+    failureAppeared,
+  }
+}
+
+/**
  * クリック前後の行テキストを比較し、変化・進行中シグナルの出現・失敗文言の出現を判定する（純関数）。
  * 行は index で対応付ける（実機では一括更新中も行の並びは安定している）。行数の増加は
  * 新しく現れた行として変化に数える。行数の減少・0 件は再描画・デタッチによる行の欠落と
@@ -115,41 +166,16 @@ export const detectRowChanges = (
   const maxLength = Math.max(beforeRows.length, afterRows.length)
 
   for (let index = 0; index < maxLength; index += 1) {
-    const before = beforeRows[index]
-    const after = afterRows[index]
-
-    // 失敗はマーカー単位の出現ベースで判定する。クリック前の行に無かった失敗マーカーが
-    // 現れた場合のみ失敗として扱い、行に前からある失敗表示を反応と誤認しない。
-    // 新規行（行数の増加で現れた行）は、含まれるマーカーを出現として扱う。
-    if (after !== undefined) {
-      const afterNormalized = normalizeText(after)
-      if (before === undefined) {
-        if (containsFailureMarker(afterNormalized)) failureAppeared = true
-      } else {
-        const beforeNormalized = normalizeText(before)
-        if (
-          FAILURE_PATTERNS.some(
-            (pattern) => pattern.test(afterNormalized) && !pattern.test(beforeNormalized),
-          )
-        ) {
-          failureAppeared = true
-        }
-      }
-    }
-
-    // 行数の増加で新しく現れた行は変化として数える（減少は先頭で無効化している）。
-    if (before === undefined || after === undefined) {
+    const delta = compareRow(beforeRows[index], afterRows[index])
+    if (delta.changed) {
       changedCount += 1
-      if (after !== undefined && hasInProgressSignal(after)) inProgressAppeared = true
-      continue
     }
-
-    // クリック前から失敗表示の行は、文言が変化しても受付の根拠にしない
-    // （失敗したままの行の再描画等を受理と誤認しない。fail closed）。
-    if (containsFailureMarker(normalizeText(before))) continue
-
-    if (normalizeText(before) !== normalizeText(after)) changedCount += 1
-    if (!hasInProgressSignal(before) && hasInProgressSignal(after)) inProgressAppeared = true
+    if (delta.inProgressAppeared) {
+      inProgressAppeared = true
+    }
+    if (delta.failureAppeared) {
+      failureAppeared = true
+    }
   }
 
   // 失敗の出現を検知した場合は受付の根拠にしない（fail closed）。

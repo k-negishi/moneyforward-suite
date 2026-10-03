@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  ROW_REFRESH_SIGNAL_PROBES,
   detectRefreshSignals,
   detectRowChanges,
   isRowSnapshotValid,
   normalizeText,
+  ROW_REFRESH_SIGNAL_PROBES,
 } from '../src/moneyforward/row-changes.js'
 
 // 合成した文言のみを使う（本番の DOM / HTML は使わない）。
@@ -36,10 +36,9 @@ describe('detectRefreshSignals', () => {
   })
 
   it('プローブは受付判定に必要な進行中系の最小限のみ（実機では「更新中」の出現を確認済み）', () => {
-    expect(ROW_REFRESH_SIGNAL_PROBES.map(([key]) => key).sort()).toEqual([
-      'fetching',
-      'inProgress',
-    ])
+    expect(
+      ROW_REFRESH_SIGNAL_PROBES.map(([key]) => key).sort((a, b) => a.localeCompare(b)),
+    ).toEqual(['fetching', 'inProgress'])
   })
 
   it('対象外の文言ではすべて false を返す', () => {

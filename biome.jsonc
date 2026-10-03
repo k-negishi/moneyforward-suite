@@ -288,8 +288,9 @@
       }
     },
     {
-      // 環境変数の読み取りを設定境界モジュールに閉じるための唯一の許可箇所。
-      "includes": ["packages/adapter-moneyforward-playwright/src/spike/config.ts"],
+      // 環境変数の読み取りを設定境界モジュールに閉じるための唯一の許可箇所
+      // （セッションファイルのパス上書き MF_SESSION_FILE を解決する）。
+      "includes": ["packages/security/src/session/session-path.ts"],
       "linter": {
         "rules": {
           "style": { "noProcessEnv": "off" }
@@ -299,8 +300,8 @@
     {
       // POSIX 権限ビットの検査にはビット演算が必要なため、& のみ許可する。
       "includes": [
-        "packages/adapter-moneyforward-playwright/src/spike/session.ts",
-        "packages/adapter-moneyforward-playwright/test/session.test.ts"
+        "packages/security/src/session/session-file.ts",
+        "packages/security/test/session-file.test.ts"
       ],
       "linter": {
         "rules": {

@@ -1,7 +1,6 @@
-import { describe, expect, it } from 'vitest'
-
-import { toSessionState, toStorageState } from '../src/moneyforward/page-client.js'
 import type { SessionState } from '@mf-suite/security'
+import { describe, expect, it } from 'vitest'
+import { toSessionState, toStorageState } from '../src/moneyforward/page-client.js'
 
 // 合成した値のみを使う（実際の Cookie・セッショントークンは使わない）。
 describe('セッション状態と Playwright storageState の相互変換', () => {

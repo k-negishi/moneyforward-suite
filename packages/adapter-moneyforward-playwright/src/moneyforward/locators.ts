@@ -38,7 +38,7 @@ export const TARGET_WAIT_TIMEOUT_MS = 10_000
 export const ROW_CHANGE_TIMEOUT_MS = 180_000
 
 /** 更新操作後に状態を読み直す間隔（ミリ秒）。 */
-export const REFRESH_POLL_INTERVAL_MS = 1_000
+export const REFRESH_POLL_INTERVAL_MS = 1000
 
 /** Locator の探索起点。Page 全体と、行の内側の両方で同じ探索を使う。 */
 export type LocatorRoot = Pick<Page, 'getByRole' | 'getByText' | 'locator'>
@@ -133,7 +133,9 @@ export const isSignInUrl = (url: string): boolean => {
     const hostname = parsed.hostname.toLowerCase()
     const pathname = parsed.pathname.toLowerCase()
     // id ドメイン（id.moneyforward.com 等）はログイン基盤そのもののため、パスによらずサインイン扱いにする。
-    if (hostname.startsWith('id.')) return true
+    if (hostname.startsWith('id.')) {
+      return true
+    }
     return (
       pathname.startsWith('/users/sign_in') ||
       pathname.includes('sign_in') ||

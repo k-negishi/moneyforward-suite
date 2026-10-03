@@ -21,10 +21,14 @@ const WORKSPACE_MARKER_FILE = 'pnpm-workspace.yaml'
 const findRepositoryRoot = (startDirectory: string): string | null => {
   let current = startDirectory
   for (;;) {
-    if (existsSync(join(current, WORKSPACE_MARKER_FILE))) return current
+    if (existsSync(join(current, WORKSPACE_MARKER_FILE))) {
+      return current
+    }
 
     const parent = dirname(current)
-    if (parent === current) return null
+    if (parent === current) {
+      return null
+    }
     current = parent
   }
 }
@@ -40,7 +44,9 @@ export const resolveSessionFilePath = (): string => {
   if (override !== undefined && override.length > 0) {
     // 相対パスは起動ディレクトリ（cwd）依存で、意図しない場所のファイルを読み書きする事故につながるため受け付けない。
     if (!isAbsolute(override)) {
-      throw new Error(`${SESSION_FILE_ENV_VAR} には絶対パスを指定してください（相対パスは受け付けません）`)
+      throw new Error(
+        `${SESSION_FILE_ENV_VAR} には絶対パスを指定してください（相対パスは受け付けません）`,
+      )
     }
     return override
   }
