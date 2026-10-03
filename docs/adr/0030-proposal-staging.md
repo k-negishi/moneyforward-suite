@@ -1,6 +1,6 @@
 # 0030. 企画段階の文書を proposals に置き、決着時に ADR へ蒸留する
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-03
 
 ## Context
