@@ -16,7 +16,7 @@ import { isRowSnapshotValid } from './row-changes.js'
  * ページ操作の下位ヘルパー。セッション状態の相互変換、認証確認、Locator 探索、
  * 開いたページの準備（認証・対象の特定）を担う。
  * 公開 API（セッション検証・更新可否の確認・一括更新の実行・手動ログイン）は page-client に置き、
- * 依存は page-client → page-helpers の一方向に保つ（受付の観測は page-client 側にある）。
+ * 依存は page-client → refresh-execution → page-helpers の一方向に保つ（受付の観測は refresh-execution 側にある）。
  * ・URL / Selector / 操作を引数で受け付けない（ADR-0010）
  * ・戻り値は状態識別子・件数・真偽値のみ（金額・カード番号・Cookie・セッション・URL・行テキストは返さない）
  * ・Screenshot / HTML dump / HAR / Trace / Video を保存しない（ADR-0017）

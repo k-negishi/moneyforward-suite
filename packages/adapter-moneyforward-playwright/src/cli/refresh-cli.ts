@@ -10,6 +10,7 @@ import type { RefreshExecutionOutcome, RefreshTargetsOutcome } from '../moneyfor
 /** CLI が返し得る状態（語彙は暫定）。 */
 export type SpikeStatus =
   | 'REFRESH_ACCEPTED'
+  | 'REFRESH_PARTIAL'
   | 'REFRESH_AVAILABLE'
   | 'TEMPORARY_FAILURE'
   | 'AUTH_REQUIRED'
@@ -18,10 +19,11 @@ export type SpikeStatus =
   | 'TARGET_NOT_FOUND'
   | 'TARGET_AMBIGUOUS'
 
-/** 終了コード: 0 = 判定成功、2 = 認証が必要、1 = その他エラー。 */
+/** 終了コード: 0 = 判定成功、4 = 一部成功（一部の行が失敗）、2 = 認証が必要、1 = その他エラー。 */
 export const EXIT_CODE_BY_STATUS: Record<SpikeStatus, number> = {
   REFRESH_AVAILABLE: 0,
   REFRESH_ACCEPTED: 0,
+  REFRESH_PARTIAL: 4,
   TEMPORARY_FAILURE: 1,
   AUTH_REQUIRED: 2,
   SESSION_MISSING: 1,
@@ -76,7 +78,9 @@ export const parseRefreshArgs = (argv: readonly string[]): RefreshOptions | null
 
 /**
  * ページ操作の結果を CLI の状態語彙へ写す（純関数・暫定）。
- * 受付が確認できた場合のみ REFRESH_ACCEPTED とし、それ以外は停止側へ倒す（fail closed）。
+ * 受付が確認できた場合は、失敗行が無ければ REFRESH_ACCEPTED、失敗行があれば REFRESH_PARTIAL とする
+ * （一部成功・一部失敗を成功表示へ潰さない。正式 CLI の PARTIAL_SUCCESS に相当し、終了コードも
+ * 予定の 4 に合わせる）。受付が確認できない場合は停止側へ倒す（fail closed）。
  * 認証失効は受付の有無によらず AUTH_REQUIRED とする。
  */
 export const toSpikeStatus = (
@@ -89,9 +93,10 @@ export const toSpikeStatus = (
       if (outcome.observation.authLost) {
         return 'AUTH_REQUIRED'
       }
-      return outcome.observation.acceptance === 'ACCEPTED'
-        ? 'REFRESH_ACCEPTED'
-        : 'TEMPORARY_FAILURE'
+      if (outcome.observation.acceptance !== 'ACCEPTED') {
+        return 'TEMPORARY_FAILURE'
+      }
+      return outcome.observation.failedRowCount > 0 ? 'REFRESH_PARTIAL' : 'REFRESH_ACCEPTED'
     case 'AUTH_REQUIRED':
     case 'SESSION_INVALID':
     case 'TARGET_NOT_FOUND':

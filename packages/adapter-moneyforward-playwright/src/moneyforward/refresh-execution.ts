@@ -21,7 +21,7 @@ import { detectRowChanges } from './row-changes.js'
  * ・戻り値は状態識別子・件数・真偽値のみ（行テキスト・URL・Cookie は返さない）
  */
 
-/** クリップ後の受付の観測結果（件数と真偽値のみ。core の観測型へ写せる形）。 */
+/** クリック後の受付の観測結果（件数と真偽値のみ。core の観測型へ写せる形）。 */
 export interface RefreshObservation {
   readonly acceptance: 'ACCEPTED' | 'NOT_ACCEPTED'
   readonly observedRowCount: number
