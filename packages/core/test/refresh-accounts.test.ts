@@ -1,17 +1,16 @@
-import { expectTypeOf, describe, expect, it } from 'vitest'
-
-import {
-  createDomainError,
-  isRetryableErrorCode,
-  toApplicationResult,
-  toFailureResult,
-} from '../src/index.js'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import type {
   ApplicationResult,
   ErrorCode,
   RefreshAcceptance,
   RefreshAccountsEvidence,
   RefreshAccountsOutcome,
+} from '../src/index.js'
+import {
+  createDomainError,
+  isRetryableErrorCode,
+  toApplicationResult,
+  toFailureResult,
 } from '../src/index.js'
 
 // テストは合成データのみを使う（実サービス・実データ・行テキストは扱わない）。

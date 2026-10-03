@@ -1,12 +1,11 @@
 import { readSessionFile, resolveSessionFilePath } from '@mf-suite/security'
-
+import type { RefreshOptions, SpikeStatus } from '../cli/refresh-cli.js'
 import {
   EXIT_CODE_BY_STATUS,
-  REFRESH_USAGE,
   parseRefreshArgs,
+  REFRESH_USAGE,
   toSpikeStatus,
 } from '../cli/refresh-cli.js'
-import type { RefreshOptions, SpikeStatus } from '../cli/refresh-cli.js'
 import { executeRefresh, inspectRefreshTargets } from '../moneyforward/page-client.js'
 
 /**
@@ -22,7 +21,9 @@ import { executeRefresh, inspectRefreshTargets } from '../moneyforward/page-clie
 /** セッションを読み込み、モードに応じて更新可否の確認または一括更新の実行を行う。 */
 const run = async (options: RefreshOptions): Promise<SpikeStatus> => {
   const session = readSessionFile(resolveSessionFilePath())
-  if (session.status !== 'OK') return session.status
+  if (session.status !== 'OK') {
+    return session.status
+  }
 
   const outcome = options.execute
     ? await executeRefresh(session.sessionState, { headless: options.headless })

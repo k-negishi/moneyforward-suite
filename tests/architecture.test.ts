@@ -22,6 +22,18 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url))
  */
 const targetFilePattern = /^(?:apps|packages)\/[^/]+\/src\/.*\.(?:[cm]?ts|tsx)$/
 
+/**
+ * 字句走査で使う文字クラス。ループ内で毎回コンパイルしないようトップレベルに置く。
+ * - IDENTIFIER_LIKE_PATTERN: 識別子として読める語（末尾トークンの判定）
+ * - ASCII_LETTER_PATTERN: 正規表現リテラルのフラグ（gimsuy 等）
+ * - WHITESPACE_PATTERN: 空白・改行の読み飛ばし
+ * - WORD_CHARACTER_PATTERN: 識別子の 1 文字目・継続文字
+ */
+const IDENTIFIER_LIKE_PATTERN = /^[\w$]+$/
+const ASCII_LETTER_PATTERN = /[a-z]/i
+const WHITESPACE_PATTERN = /\s/
+const WORD_CHARACTER_PATTERN = /[\w$]/
+
 /** 依存を許可する単位（unit）。unit はリポジトリルートからの先頭 2 セグメントで、workspace package と対応する。 */
 interface UnitRule {
   readonly unit: string
@@ -126,22 +138,38 @@ const isImportSpecifierContext = (recentTokens: readonly string[]): boolean => {
   const beforeBeforeLast = recentTokens.at(-3)
 
   // `obj.from` のようなプロパティ参照に続くテンプレートは指定子ではない（`.` を挟む場合は import 構文ではない）。
-  if ((last === 'from' || last === 'import') && beforeLast !== '.') return true
+  if ((last === 'from' || last === 'import') && beforeLast !== '.') {
+    return true
+  }
 
   // `x.require('...')` のようなメソッド呼び出しも対象外（`.` を挟む場合は import 指定子ではない）。
-  return last === '(' && (beforeLast === 'import' || beforeLast === 'require') && beforeBeforeLast !== '.'
+  return (
+    last === '(' &&
+    (beforeLast === 'import' || beforeLast === 'require') &&
+    beforeBeforeLast !== '.'
+  )
 }
 
 /** 直近の字句から、`/` が正規表現リテラルの開始かを判定する（識別子・数値等の直後は除算）。 */
 const isRegexLiteralStart = (recentTokens: readonly string[]): boolean => {
   const last = recentTokens.at(-1)
 
-  if (last === undefined) return true
-  if (regexPrefixKeywords.has(last)) return true
-  if (last === ')' || last === ']' || last === 'string' || last === 'template' || last === 'regex') {
+  if (last === undefined) {
+    return true
+  }
+  if (regexPrefixKeywords.has(last)) {
+    return true
+  }
+  if (
+    last === ')' ||
+    last === ']' ||
+    last === 'string' ||
+    last === 'template' ||
+    last === 'regex'
+  ) {
     return false
   }
-  return !/^[\w$]+$/.test(last)
+  return !IDENTIFIER_LIKE_PATTERN.test(last)
 }
 
 /**
@@ -162,7 +190,9 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
 
   const pushToken = (token: string): void => {
     recentTokens.push(token)
-    if (recentTokens.length > tokenWindowSize) recentTokens.shift()
+    if (recentTokens.length > tokenWindowSize) {
+      recentTokens.shift()
+    }
   }
 
   /** 文字列リテラルを読み、import 指定子の文脈にあれば記録する。 */
@@ -179,7 +209,9 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
         hasEscape = true
         const escaped = source[index + 1] ?? ''
         // 行継続（\ + 改行）のときは行番号を進める。
-        if (escaped === '\n') line += 1
+        if (escaped === '\n') {
+          line += 1
+        }
         value += `\\${escaped}`
         index += 2
         continue
@@ -189,7 +221,9 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
         break
       }
       // 文字列は行を跨がない。未終端（走査の乱れ）は行末で打ち切って暴走を防ぐ。
-      if (char === '\n') break
+      if (char === '\n') {
+        break
+      }
       value += char
       index += 1
     }
@@ -206,12 +240,16 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
     while (index < source.length) {
       const char = source[index]
       if (char === '\\') {
-        if (source[index + 1] === '\n') line += 1
+        if (source[index + 1] === '\n') {
+          line += 1
+        }
         index += 2
         continue
       }
       if (char === quote || char === '\n') {
-        if (char === '\n') line += 1
+        if (char === '\n') {
+          line += 1
+        }
         index += 1
         return
       }
@@ -227,7 +265,9 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
     while (index < source.length) {
       const char = source[index]
       if (char === '\\') {
-        if (source[index + 1] === '\n') line += 1
+        if (source[index + 1] === '\n') {
+          line += 1
+        }
         index += 2
         continue
       }
@@ -235,9 +275,11 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
         // 正規表現は行を跨がない。乱れは行末で打ち切る（改行は呼び出し元の走査が数える）。
         return
       }
-      if (char === '[') inCharacterClass = true
-      else if (char === ']') inCharacterClass = false
-      else if (char === '/' && !inCharacterClass) {
+      if (char === '[') {
+        inCharacterClass = true
+      } else if (char === ']') {
+        inCharacterClass = false
+      } else if (char === '/' && !inCharacterClass) {
         index += 1
         break
       }
@@ -245,7 +287,9 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
     }
 
     // フラグ（gimsuy 等）を読み飛ばす。
-    while (index < source.length && /[a-z]/i.test(source[index])) index += 1
+    while (index < source.length && ASCII_LETTER_PATTERN.test(source[index])) {
+      index += 1
+    }
   }
 
   /**
@@ -266,7 +310,9 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
         hasEscape = true
         const escaped = source[index + 1] ?? ''
         // 行継続（\ + 改行）のときは行番号を進める。
-        if (escaped === '\n') line += 1
+        if (escaped === '\n') {
+          line += 1
+        }
         value += `\\${escaped}`
         index += 2
         continue
@@ -303,7 +349,9 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
     while (index < source.length) {
       const char = source[index]
       if (char === '\\') {
-        if (source[index + 1] === '\n') line += 1
+        if (source[index + 1] === '\n') {
+          line += 1
+        }
         index += 2
         continue
       }
@@ -343,8 +391,11 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
         skipTemplate()
         continue
       }
-      if (char === '{') depth += 1
-      else if (char === '}') depth -= 1
+      if (char === '{') {
+        depth += 1
+      } else if (char === '}') {
+        depth -= 1
+      }
       index += 1
     }
   }
@@ -357,18 +408,22 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
       index += 1
       continue
     }
-    if (/\s/.test(char)) {
+    if (WHITESPACE_PATTERN.test(char)) {
       index += 1
       continue
     }
     if (char === '/' && source[index + 1] === '/') {
-      while (index < source.length && source[index] !== '\n') index += 1
+      while (index < source.length && source[index] !== '\n') {
+        index += 1
+      }
       continue
     }
     if (char === '/' && source[index + 1] === '*') {
       index += 2
       while (index < source.length && !(source[index] === '*' && source[index + 1] === '/')) {
-        if (source[index] === '\n') line += 1
+        if (source[index] === '\n') {
+          line += 1
+        }
         index += 1
       }
       index = Math.min(index + 2, source.length)
@@ -387,9 +442,9 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
       pushToken('regex')
       continue
     }
-    if (/[\w$]/.test(char)) {
+    if (WORD_CHARACTER_PATTERN.test(char)) {
       let word = ''
-      while (index < source.length && /[\w$]/.test(source[index])) {
+      while (index < source.length && WORD_CHARACTER_PATTERN.test(source[index])) {
         word += source[index]
         index += 1
       }
@@ -425,7 +480,10 @@ const findWorkspacePackage = (
 }
 
 const isRelativeSpecifier = (specifier: string): boolean =>
-  specifier === '.' || specifier === '..' || specifier.startsWith('./') || specifier.startsWith('../')
+  specifier === '.' ||
+  specifier === '..' ||
+  specifier.startsWith('./') ||
+  specifier.startsWith('../')
 
 /**
  * bare import の指定子に `.` / `..` のパスセグメントを含むか。
@@ -444,10 +502,9 @@ const escapesUnit = (filePath: string, specifier: string): boolean => {
 
 /** 外部パッケージの import が許可行列にあるか（subpath を含む）。 */
 const isAllowedExternalPackage = (rule: UnitRule | undefined, specifier: string): boolean =>
-  rule !== undefined &&
-  rule.allowedExternalPackages.some(
+  rule?.allowedExternalPackages.some(
     (packageName) => specifier === packageName || specifier.startsWith(`${packageName}/`),
-  )
+  ) ?? false
 
 const disallowedExternalReason = (unit: string): string =>
   unit === 'packages/core'
@@ -492,12 +549,15 @@ const checkSource = (filePath: string, source: string): Violation[] => {
         path: filePath,
         line,
         specifier,
-        reason: '指定子に `.` / `..` セグメントを含む（解決後の別パッケージへの迂回を防ぐため許可しない）',
+        reason:
+          '指定子に `.` / `..` セグメントを含む（解決後の別パッケージへの迂回を防ぐため許可しない）',
       })
       continue
     }
 
-    if (isBuiltin(specifier)) continue
+    if (isBuiltin(specifier)) {
+      continue
+    }
 
     const target = findWorkspacePackage(specifier)
 
@@ -511,7 +571,7 @@ const checkSource = (filePath: string, source: string): Violation[] => {
       continue
     }
 
-    if (target !== null && target.unit.startsWith('apps/')) {
+    if (target?.unit.startsWith('apps/')) {
       violations.push({
         path: filePath,
         line,
@@ -524,7 +584,7 @@ const checkSource = (filePath: string, source: string): Violation[] => {
     }
 
     if (target !== null) {
-      const allowed = rule !== undefined && rule.allowedWorkspacePackages.includes(target.packageName)
+      const allowed = rule?.allowedWorkspacePackages.includes(target.packageName)
       if (!allowed) {
         violations.push({
           path: filePath,
@@ -567,12 +627,16 @@ const listRepoFiles = (): string[] =>
 /** 検査対象のファイル（リポジトリルートからの相対パス）を集める。 */
 const collectTargetFiles = (): string[] =>
   listRepoFiles().filter((relativePath) => {
-    if (!targetFilePattern.test(relativePath)) return false
+    if (!targetFilePattern.test(relativePath)) {
+      return false
+    }
 
     const absolutePath = join(repoRoot, relativePath)
 
     // 未ステージで削除されたファイル（git の index に残っている）で落ちないよう存在を確認する。
-    if (!existsSync(absolutePath)) return false
+    if (!existsSync(absolutePath)) {
+      return false
+    }
 
     // シンボリックリンクは実体を二重に検査しないため対象外にする。
     return !lstatSync(absolutePath).isSymbolicLink()
@@ -589,7 +653,8 @@ const formatViolationReport = (violations: readonly Violation[]): string =>
     '許可行列は tests/architecture.test.ts の unitRules を参照する。',
     '',
     ...violations.map(
-      (violation) => `${violation.path}:${violation.line} ${violation.specifier} — ${violation.reason}`,
+      (violation) =>
+        `${violation.path}:${violation.line} ${violation.specifier} — ${violation.reason}`,
     ),
   ].join('\n')
 
@@ -647,7 +712,7 @@ describe('依存規則の回帰テスト（合成ソース）', () => {
         "// import { chromium } from 'playwright'",
         "/* export * from 'playwright' */",
         'const note = "require(\'playwright\')"',
-        "const pattern = /from ['\"]playwright['\"]/",
+        'const pattern = /from [\'"]playwright[\'"]/',
       ].join('\n'),
       expected: [],
     },
@@ -666,7 +731,7 @@ describe('依存規則の回帰テスト（合成ソース）', () => {
     {
       name: 'Core: 補間を含むテンプレートリテラルの指定子は検出しない（既知の限界）',
       filePath: 'packages/core/src/fixture.ts',
-      source: 'const loaded = await import(`./generated/${name}.js`)',
+      source: `const loaded = await import(\`./generated/\${name}.js\`)`,
       expected: [],
     },
     {
@@ -735,7 +800,8 @@ describe('依存規則の回帰テスト（合成ソース）', () => {
     {
       name: 'Adapter(Playwright): `..` セグメントで AWS SDK へ迂回する指定子を検出する',
       filePath: 'packages/adapter-moneyforward-playwright/src/fixture.ts',
-      source: "import { SecretsManagerClient } from 'playwright/../@aws-sdk/client-secrets-manager'",
+      source:
+        "import { SecretsManagerClient } from 'playwright/../@aws-sdk/client-secrets-manager'",
       expected: ['playwright/../@aws-sdk/client-secrets-manager'],
     },
     {
@@ -759,7 +825,8 @@ describe('依存規則の回帰テスト（合成ソース）', () => {
     {
       name: 'Core: エスケープを含む指定子は復号せず違反として報告する',
       filePath: 'packages/core/src/fixture.ts',
-      source: "import { chromium } from 'playwright/\\u002e\\u002e/@aws-sdk/client-secrets-manager'",
+      source:
+        "import { chromium } from 'playwright/\\u002e\\u002e/@aws-sdk/client-secrets-manager'",
       expected: ['playwright/\\u002e\\u002e/@aws-sdk/client-secrets-manager'],
     },
     {
@@ -906,7 +973,7 @@ describe('依存規則の回帰テスト（合成ソース）', () => {
     const source = [
       "import { join } from 'node:path'",
       '',
-      "import {",
+      'import {',
       '  chromium,',
       "} from 'playwright'",
     ].join('\n')

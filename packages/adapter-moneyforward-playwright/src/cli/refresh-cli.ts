@@ -52,11 +52,15 @@ export const parseRefreshArgs = (argv: readonly string[]): RefreshOptions | null
   for (const arg of argv) {
     switch (arg) {
       case '--headed':
-        if (mode === 'headless') return null
+        if (mode === 'headless') {
+          return null
+        }
         mode = 'headed'
         break
       case '--headless':
-        if (mode === 'headed') return null
+        if (mode === 'headed') {
+          return null
+        }
         mode = 'headless'
         break
       case '--execute':
@@ -82,7 +86,9 @@ export const toSpikeStatus = (
     case 'AVAILABLE':
       return 'REFRESH_AVAILABLE'
     case 'OBSERVED':
-      if (outcome.observation.authLost) return 'AUTH_REQUIRED'
+      if (outcome.observation.authLost) {
+        return 'AUTH_REQUIRED'
+      }
       return outcome.observation.acceptance === 'ACCEPTED'
         ? 'REFRESH_ACCEPTED'
         : 'TEMPORARY_FAILURE'

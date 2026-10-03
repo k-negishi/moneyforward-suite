@@ -2,8 +2,8 @@ import type {
   ErrorCode,
   LogApplication,
   LogEvent,
-  LogJob,
   LoggerPort,
+  LogJob,
   LogStatus,
 } from '@mf-suite/core'
 import { isErrorCode, isLogJob, isLogStatus } from '@mf-suite/core'
@@ -61,9 +61,15 @@ const writeJsonLineToStdout: LogSink = (jsonLine) => {
  * 未指定（undefined）だけは「key なし」として区別する。
  */
 const normalizeErrorCode = (value: unknown): ErrorCode | undefined => {
-  if (value === undefined) return undefined
+  if (value === undefined) {
+    return undefined
+  }
   return isErrorCode(value) ? value : 'UNKNOWN'
 }
+
+/** 値が null 以外のオブジェクトかを判定する（未知の値から field を読む前段の絞り込み）。 */
+const isRecordObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
 
 /** attempt の検証: 1 以上の整数。オブジェクト・NaN・Infinity・小数・文字列を弾く。 */
 const isPositiveInteger = (value: unknown): value is number =>
@@ -88,9 +94,11 @@ const toRecord = (
   event: unknown,
   timestamp: string,
 ): StructuredLogRecord | null => {
-  if (typeof event !== 'object' || event === null) return null
+  if (!isRecordObject(event)) {
+    return null
+  }
 
-  const fields = event as Record<string, unknown>
+  const fields = event
   // 各 field は一度だけローカルへ読む。検証と出力にはこの同じローカルの値だけを使い、
   // getter 持ちイベントで「検証時と出力時で別の値が返る」すり抜け（TOCTOU）を断つ。
   const eventApplication = fields.application
@@ -100,11 +108,21 @@ const toRecord = (
   const durationMs = fields.durationMs
   const rawErrorCode = fields.errorCode
 
-  if (eventApplication !== application) return null
-  if (!isLogJob(job)) return null
-  if (!isLogStatus(status)) return null
-  if (!isPositiveInteger(attempt)) return null
-  if (!isNonNegativeInteger(durationMs)) return null
+  if (eventApplication !== application) {
+    return null
+  }
+  if (!isLogJob(job)) {
+    return null
+  }
+  if (!isLogStatus(status)) {
+    return null
+  }
+  if (!isPositiveInteger(attempt)) {
+    return null
+  }
+  if (!isNonNegativeInteger(durationMs)) {
+    return null
+  }
 
   const errorCode = normalizeErrorCode(rawErrorCode)
 
@@ -140,7 +158,9 @@ export const createStructuredLogger = (options: StructuredLoggerOptions): Logger
   return {
     log(event: LogEvent): void {
       const record = toRecord(options.application, event, new Date().toISOString())
-      if (record === null) return
+      if (record === null) {
+        return
+      }
 
       sink(JSON.stringify(record))
     },

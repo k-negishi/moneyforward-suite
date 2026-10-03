@@ -10,11 +10,14 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b && pnpm -r --if-present run typecheck && tsc -p tests/tsconfig.check.json",
+    "lint": "biome check --error-on-warnings .",
+    "format": "biome check --write .",
     "test": "vitest run",
     "test:architecture": "vitest run --project repo-policy --passWithNoTests=false architecture",
     "clean": "tsc -b --clean && rm -rf apps/*/dist packages/*/dist"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
     "@types/node": "^22.20.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.2",

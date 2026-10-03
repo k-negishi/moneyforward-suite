@@ -25,9 +25,15 @@ export type AuthState = 'AUTHENTICATED' | 'AUTH_REQUIRED' | 'UNKNOWN'
  */
 export const classifyAuthState = (signals: AuthStateSignals): AuthState => {
   // sign_in へのリダイレクトは、本文の取得可否によらず未認証と言い切れる。
-  if (signals.isSignInUrl) return 'AUTH_REQUIRED'
-  if (signals.visibleChallengeInputCount > 0) return 'AUTH_REQUIRED'
-  if (normalizeText(signals.visibleText).length === 0) return 'UNKNOWN'
+  if (signals.isSignInUrl) {
+    return 'AUTH_REQUIRED'
+  }
+  if (signals.visibleChallengeInputCount > 0) {
+    return 'AUTH_REQUIRED'
+  }
+  if (normalizeText(signals.visibleText).length === 0) {
+    return 'UNKNOWN'
+  }
   return containsAuthChallenge(signals.visibleText) ? 'AUTH_REQUIRED' : 'AUTHENTICATED'
 }
 
@@ -40,6 +46,8 @@ export type LoginStatus = 'SESSION_SAVED' | 'AUTH_REQUIRED' | 'TEMPORARY_FAILURE
  * TEMPORARY_FAILURE とする（未認証・判定不能はどちらも保存しない。fail closed）。
  */
 export const authStateToLoginStatus = (authState: AuthState): LoginStatus => {
-  if (authState === 'AUTHENTICATED') return 'SESSION_SAVED'
+  if (authState === 'AUTHENTICATED') {
+    return 'SESSION_SAVED'
+  }
   return authState === 'AUTH_REQUIRED' ? 'AUTH_REQUIRED' : 'TEMPORARY_FAILURE'
 }

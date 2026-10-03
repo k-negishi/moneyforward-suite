@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-
-import { createDomainError, isErrorCode, isRetryableErrorCode } from '../src/index.js'
 import type { DomainError, ErrorCode, Result } from '../src/index.js'
+import { createDomainError, isErrorCode, isRetryableErrorCode } from '../src/index.js'
 
 // テストは合成データのみを使う（Secret・実データは扱わない）。
 

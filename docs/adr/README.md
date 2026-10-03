@@ -57,3 +57,4 @@
 | [0032](0032-opaque-secret-values.md) | 認証セッションと Secret の値を opaque 型で表す | Proposed | 2026-10-03 |
 | [0033](0033-error-code-retry-classification.md) | ErrorCode の語彙と再試行可否を 1 つの対応表で定義する | Proposed | 2026-10-03 |
 | [0034](0034-architecture-test-detector.md) | Architecture Test を自作の import 検出器で実装する | Proposed | 2026-10-03 |
+| [0035](0035-lint-format-with-biome.md) | lint と format に Biome を採用する | Accepted | 2026-10-03 |

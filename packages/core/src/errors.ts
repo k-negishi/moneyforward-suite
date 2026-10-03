@@ -83,4 +83,8 @@ export interface DomainError {
  * 流れる経路を断つ）。
  */
 export const createDomainError = (code: ErrorCode): DomainError =>
+  // ブランドは型レベルのみ（declare const、実行時の値を持たない）ため、オブジェクト
+  // リテラルから DomainError を作るにはキャストが要る。ここは「DomainError の生成を
+  // createDomainError に閉じる」設計上の 1 箇所だけであり、意図的なキャストとして許可する。
+  // biome-ignore lint/nursery/noUnsafeTypeAssertion: ファントムブランドを付ける唯一の生成経路（実行時の形状は code だけのまま）
   ({ code: normalizeErrorCode(code) }) as DomainError

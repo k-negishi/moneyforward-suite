@@ -1,4 +1,3 @@
-import { createDomainError } from '@mf-suite/core'
 import type {
   AuthSession,
   MoneyForwardPort,
@@ -6,10 +5,10 @@ import type {
   Result,
   SessionVerification,
 } from '@mf-suite/core'
+import { createDomainError } from '@mf-suite/core'
 import { fromAuthSession } from '@mf-suite/security'
-
-import { checkSession, executeRefresh } from './page-client.js'
 import type { RefreshExecutionOutcome, RefreshObservation } from './page-client.js'
+import { checkSession, executeRefresh } from './page-client.js'
 
 /**
  * MoneyForwardPort（core が定義）の Playwright 実装。

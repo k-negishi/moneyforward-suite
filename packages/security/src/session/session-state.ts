@@ -45,7 +45,9 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> =>
  * 要素の中身までは検証しない（保存側の形式を前提にし、不一致は利用時に fail closed で扱う）。
  */
 export const isSessionState = (value: unknown): value is SessionState => {
-  if (!isPlainObject(value)) return false
+  if (!isPlainObject(value)) {
+    return false
+  }
 
   const { cookies, origins } = value
   return (

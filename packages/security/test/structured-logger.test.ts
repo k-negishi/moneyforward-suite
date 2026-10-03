@@ -1,6 +1,5 @@
-import { describe, expect, it } from 'vitest'
-
 import type { ErrorCode, LogEvent } from '@mf-suite/core'
+import { describe, expect, it } from 'vitest'
 
 import type { LogSink, StructuredLogRecord } from '../src/index.js'
 import { createStructuredLogger } from '../src/index.js'
@@ -34,6 +33,18 @@ const parseSingleLine = (lines: readonly string[]): Record<string, unknown> => {
   expect(line).not.toContain('\n')
   return JSON.parse(line) as Record<string, unknown>
 }
+
+/** ロガーが付与する timestamp の形式（ISO 8601・UTC・ミリ秒 3 桁）。 */
+const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+
+/**
+ * JSON.stringify がオブジェクトに呼ぶ toJSON を持つ値を組み立てる。
+ * ロガーが値を丸ごと直列化した場合に何が漏れるかを再現するための fixture。
+ */
+const createToJsonValue = (leakedValue: string | number): Record<string, unknown> => ({
+  // biome-ignore lint/style/useNamingConvention: toJSON は JSON.stringify が呼ぶ ECMAScript のプロトコル名（検査対象の再現に必要）
+  toJSON: () => leakedValue,
+})
 
 /** 合成データのみの基準イベント。 */
 const baseEvent = {
@@ -87,7 +98,7 @@ describe('構造化ロガーの出力（allow list）', () => {
     expect(record.status).toBe('STARTED')
     expect(record.attempt).toBe(1)
     expect(record.durationMs).toBe(12)
-    expect(record.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    expect(record.timestamp).toMatch(ISO_TIMESTAMP_PATTERN)
   })
 
   it('失敗イベントは timestamp + 6 field の 7 key ちょうどで固定される', () => {
@@ -188,7 +199,9 @@ describe('敵対的入力への防御（実行時の allow list）', () => {
       expect(line).not.toContain('\n')
       const parsed = JSON.parse(line) as Record<string, unknown>
       for (const key of Object.keys(parsed)) {
-        if (key === 'timestamp') continue
+        if (key === 'timestamp') {
+          continue
+        }
         expect(allowedFieldKeys).toContain(key)
       }
       expect(parsed.application).toBe('automation')
@@ -199,7 +212,7 @@ describe('敵対的入力への防御（実行時の allow list）', () => {
 
 describe('値の実行時検証（fail closed）', () => {
   /** 値を検証できない（語彙外・型違い・欠落）イベントの表。 */
-  const invalidEvents: Array<[string, unknown]> = [
+  const invalidEvents: [string, unknown][] = [
     ['job が語彙外の自由文字列（キャスト混入）', { ...baseEvent, job: 'LEAKED_FREE_STRING' }],
     ['job が数値', { ...baseEvent, job: 1 }],
     ['status が語彙外の自由文字列（キャスト混入）', { ...baseEvent, status: 'LEAKED_FREE_STRING' }],
@@ -209,7 +222,7 @@ describe('値の実行時検証（fail closed）', () => {
     ],
     [
       'attempt が toJSON を持つオブジェクト',
-      { ...baseEvent, attempt: { toJSON: () => 'LEAKED_FREE_STRING' } },
+      { ...baseEvent, attempt: createToJsonValue('LEAKED_FREE_STRING') },
     ],
     ['attempt が 0', { ...baseEvent, attempt: 0 }],
     ['attempt が小数', { ...baseEvent, attempt: 1.5 }],
@@ -292,7 +305,7 @@ describe('値の実行時検証（fail closed）', () => {
     const capturing = createCapturingSink()
     const logger = createStructuredLogger({ application: 'automation', sink: capturing.sink })
 
-    logger.log(createGetterEvent('attempt', [1, { toJSON: () => 'LEAKED_FREE_STRING' }]))
+    logger.log(createGetterEvent('attempt', [1, createToJsonValue('LEAKED_FREE_STRING')]))
 
     const record = parseSingleLine(capturing.lines)
     expect(record.attempt).toBe(1)
@@ -304,7 +317,7 @@ describe('値の実行時検証（fail closed）', () => {
     const logger = createStructuredLogger({ application: 'automation', sink: capturing.sink })
 
     logger.log(createGetterEvent('job', ['LEAKED_FREE_STRING', 'refresh-accounts']))
-    logger.log(createGetterEvent('attempt', [{ toJSON: () => 1 }, 1]))
+    logger.log(createGetterEvent('attempt', [createToJsonValue(1), 1]))
 
     expect(capturing.lines).toEqual([])
   })

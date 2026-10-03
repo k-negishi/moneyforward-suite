@@ -1,7 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { SessionState } from '@mf-suite/security'
 
 import { toAuthSession } from '@mf-suite/security'
-import type { SessionState } from '@mf-suite/security'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PlaywrightMoneyForwardAdapter } from '../src/moneyforward/adapter.js'
 import type { RefreshObservation } from '../src/moneyforward/page-client.js'

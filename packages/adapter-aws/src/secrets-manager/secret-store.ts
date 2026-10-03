@@ -1,7 +1,6 @@
 import { GetSecretValueCommand } from '@aws-sdk/client-secrets-manager'
-
-import { createDomainError } from '@mf-suite/core'
 import type { ErrorCode, Result, SecretId, SecretStorePort, SecretValue } from '@mf-suite/core'
+import { createDomainError } from '@mf-suite/core'
 
 /**
  * 注入可能な Secrets Manager client の最小構造。`send(command)` だけを要求し、
@@ -35,6 +34,7 @@ export interface AwsSecretsManagerSecretStoreConfig {
  * 生成側（この Adapter）にはキャストが必要になる（意図的なコスト。境界を跨ぐ実装を
  * レビューで可視にする）。キャストはこの 1 箇所に閉じ込める。
  */
+// biome-ignore lint/nursery/noUnsafeTypeAssertion: ブランドは core の public API から export されず、opaque な SecretValue を Adapter で生成するにはこの 1 箇所のキャストが必要（境界を跨ぐ実装をレビューで可視にする）
 const toSecretValue = (value: string): SecretValue => value as unknown as SecretValue
 
 /**
@@ -42,8 +42,10 @@ const toSecretValue = (value: string): SecretValue => value as unknown as Secret
  * 持ち込まない。message には Secret を含み得るため、Domain Error へ写像しない）。
  */
 const readErrorName = (error: unknown): string | null => {
-  if (typeof error !== 'object' || error === null) return null
-  const name = (error as { readonly name?: unknown }).name
+  if (typeof error !== 'object' || error === null || !('name' in error)) {
+    return null
+  }
+  const name = error.name
   return typeof name === 'string' ? name : null
 }
 
@@ -93,8 +95,10 @@ const classifyFailure = (error: unknown): ErrorCode => {
  * 取り出せない場合は null を返し、呼び出し側が SECRET_INVALID へ写像する。
  */
 const readSecretString = (response: unknown): string | null => {
-  if (typeof response !== 'object' || response === null) return null
-  const secretString = (response as { readonly SecretString?: unknown }).SecretString
+  if (typeof response !== 'object' || response === null || !('SecretString' in response)) {
+    return null
+  }
+  const secretString = response.SecretString
   return typeof secretString === 'string' ? secretString : null
 }
 
@@ -141,9 +145,7 @@ export class AwsSecretsManagerSecretStore implements SecretStorePort {
 
     let response: unknown
     try {
-      response = await this.client.send(
-        new GetSecretValueCommand({ SecretId: this.secretName }),
-      )
+      response = await this.client.send(new GetSecretValueCommand({ SecretId: this.secretName }))
     } catch (error) {
       return { ok: false, error: createDomainError(classifyFailure(error)) }
     }

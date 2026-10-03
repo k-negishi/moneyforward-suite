@@ -13,7 +13,9 @@ export const waitForEnter = (message: string): Promise<boolean> =>
     let settled = false
 
     const finish = (completed: boolean): void => {
-      if (settled) return
+      if (settled) {
+        return
+      }
       settled = true
       readline.close()
       resolve(completed)

@@ -20,5 +20,8 @@
     "@mf-suite/core": "workspace:*",
     "@mf-suite/security": "workspace:*",
     "playwright": "^1.63.0"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.3"
   }
 }

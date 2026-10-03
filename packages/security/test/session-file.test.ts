@@ -99,14 +99,17 @@ describe('session の保存と読込', () => {
     expect(result).toEqual({ status: 'OK', sessionState: syntheticSessionState })
   })
 
-  it.skipIf(process.platform === 'win32')('保存時にディレクトリを 0700・ファイルを 0600 にする', () => {
-    const directory = join(workDirectory, '.local')
-    const filePath = join(directory, 'moneyforward-session.json')
-    saveSessionState(filePath, syntheticSessionState)
+  it.skipIf(process.platform === 'win32')(
+    '保存時にディレクトリを 0700・ファイルを 0600 にする',
+    () => {
+      const directory = join(workDirectory, '.local')
+      const filePath = join(directory, 'moneyforward-session.json')
+      saveSessionState(filePath, syntheticSessionState)
 
-    expect(statSync(directory).mode & 0o777).toBe(0o700)
-    expect(statSync(filePath).mode & 0o777).toBe(0o600)
-  })
+      expect(statSync(directory).mode & 0o777).toBe(0o700)
+      expect(statSync(filePath).mode & 0o777).toBe(0o600)
+    },
+  )
 
   it.skipIf(process.platform === 'win32')('既存ファイルの権限が緩い場合も 0600 に締める', () => {
     const filePath = join(workDirectory, 'moneyforward-session.json')

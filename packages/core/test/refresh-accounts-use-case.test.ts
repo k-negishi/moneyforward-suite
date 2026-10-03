@@ -1,6 +1,4 @@
-import { expectTypeOf, describe, expect, it } from 'vitest'
-
-import { RefreshAccountsUseCase, createDomainError } from '../src/index.js'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import type {
   ApplicationResult,
   AuthSession,
@@ -14,6 +12,7 @@ import type {
   Result,
   SessionVerification,
 } from '../src/index.js'
+import { createDomainError, RefreshAccountsUseCase } from '../src/index.js'
 
 // テストは合成データのみを使う（実サービス・実データ・行テキストは扱わない）。
 
@@ -41,21 +40,24 @@ const createOutcome = (
   }
 }
 
-/** 呼び出しを記録し、シナリオごとに戻り値を差し替えられる fake Port。 */
+/**
+ * 呼び出しを記録し、シナリオごとに戻り値を差し替えられる fake Port。
+ * 待機する処理はないため async は付けず、Promise を直接返す（useAwait に合わせる）。
+ */
 class FakeMoneyForwardPort implements MoneyForwardPort {
   verification: SessionVerification = 'VALID'
   refreshResult: Result<RefreshAccountsOutcome> = { ok: true, value: createOutcome() }
   readonly verifyCalls: AuthSession[] = []
   readonly refreshCalls: AuthSession[] = []
 
-  async verifySession(session: AuthSession): Promise<SessionVerification> {
+  verifySession(session: AuthSession): Promise<SessionVerification> {
     this.verifyCalls.push(session)
-    return this.verification
+    return Promise.resolve(this.verification)
   }
 
-  async refreshAccounts(session: AuthSession): Promise<Result<RefreshAccountsOutcome>> {
+  refreshAccounts(session: AuthSession): Promise<Result<RefreshAccountsOutcome>> {
     this.refreshCalls.push(session)
-    return this.refreshResult
+    return Promise.resolve(this.refreshResult)
   }
 }
 
@@ -77,7 +79,8 @@ const createHarness = () => {
 }
 
 /** イベントの field 名（ソート済み）。Allow List の検査に使う。 */
-const fieldNames = (event: LogEvent): string[] => Object.keys(event).sort()
+const fieldNames = (event: LogEvent): string[] =>
+  Object.keys(event).sort((a, b) => a.localeCompare(b))
 
 describe('RefreshAccountsUseCase', () => {
   describe('セッション検証（fail closed）', () => {
@@ -286,7 +289,9 @@ describe('RefreshAccountsUseCase', () => {
 
 describe('RefreshAccountsUseCase の型契約', () => {
   it('execute は入力を受け取り ApplicationResult を返す', () => {
-    expectTypeOf<RefreshAccountsUseCase['execute']>().parameters.toEqualTypeOf<[RefreshAccountsInput]>()
+    expectTypeOf<RefreshAccountsUseCase['execute']>().parameters.toEqualTypeOf<
+      [RefreshAccountsInput]
+    >()
     expectTypeOf<RefreshAccountsUseCase['execute']>().returns.toEqualTypeOf<
       Promise<ApplicationResult>
     >()

@@ -14,9 +14,12 @@ const main = async (): Promise<number> => {
   const sessionFilePath = resolveSessionFilePath()
 
   // 案内の表示と Enter の待機は CLI 側の責務とし、ログイン画面を開いた後に呼ばれる。
-  const result = await runManualLoginSession(sessionFilePath, async () => {
+  // 待機する処理はないため async は付けず、Promise を直接返す（useAwait に合わせる）。
+  const result = await runManualLoginSession(sessionFilePath, () => {
     console.log('ブラウザで MoneyForward ME に手動ログインしてください。')
-    console.log('CAPTCHA・ワンタイムパスワード・新端末確認はご自身で対応してください（自動回避しません）。')
+    console.log(
+      'CAPTCHA・ワンタイムパスワード・新端末確認はご自身で対応してください（自動回避しません）。',
+    )
     return waitForEnter('ログインが完了したら Enter を押してください: ')
   })
 
@@ -36,7 +39,9 @@ const main = async (): Promise<number> => {
       return 2
     case 'TEMPORARY_FAILURE':
       console.log('status=TEMPORARY_FAILURE')
-      console.log('ログイン状態を確認できなかったため（本文を取得できない）、セッションは保存していません。')
+      console.log(
+        'ログイン状態を確認できなかったため（本文を取得できない）、セッションは保存していません。',
+      )
       return 1
   }
 }
