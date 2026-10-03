@@ -53,10 +53,10 @@ const excludedDirectoryPrefixes = ['docs/', '.claude/skills/']
 const excludedFilePaths = new Set(['pnpm-lock.yaml'])
 
 /**
- * ワークフローファイルが置かれるディレクトリ（リポジトリルートからの相対パス）。
- * このディレクトリ配下のファイルだけを、Artifact 保存の抑止で追加検査する。
+ * Action 定義（ワークフロー・composite action）が置かれるディレクトリ（リポジトリルートからの相対パス）。
+ * このディレクトリ配下のファイルだけを、保存 Action の参照の抑止で追加検査する。
  */
-const workflowDirectoryPrefix = '.github/workflows/'
+const githubDirectoryPrefix = '.github/'
 
 /**
  * コメント規約（CLAUDE.md）で禁止する番号参照。番号は設計書の改版や Issue の移設で
@@ -80,12 +80,14 @@ const forbiddenPatterns: readonly RegExp[] = [
 ]
 
 /**
- * ワークフローで参照しない Action 名。`.github/workflows/` 配下のファイルにこの名前が
- * 現れたら違反とする。Artifact を GitHub 側へ保存する Action は、認証セッション・
- * Screenshot・Trace・HAR・Video などの機微な情報を CI の外へ持ち出し得るため使わない。
- * 保存が必要な調査はローカルで行い、成果物は git 管理外に置く。
+ * `.github/` 配下で参照しない保存 Action。Artifact を GitHub 側へ保存する Action は、
+ * 認証セッション・Screenshot・Trace・HAR・Video などの機微な情報を CI の外へ持ち出し得る。
+ * `uses:` 行の参照だけを対象にし、大文字小文字は問わない（コメントや `run:` 内の言及は
+ * 誤検出しない）。保存が必要な調査はローカルで行い、成果物は git 管理外に置く。
+ * この検査は `uses:` 行の参照の抑止にとどまり、`run:` ステップ内での送出や、別名・
+ * ラッパーなど未知の Action は防げない。それらはレビューで補う。
  */
-const forbiddenWorkflowPatterns: readonly RegExp[] = [/upload-artifact/]
+const forbiddenWorkflowPatterns: readonly RegExp[] = [/uses\s*:\s*\S*upload-artifact/i]
 
 interface Violation {
   readonly path: string
@@ -155,12 +157,12 @@ const collectViolations = (filePaths: readonly string[]): Violation[] => {
   return violations
 }
 
-/** `.github/workflows/` 配下のファイルだけを走査し、違反した行を集める。 */
+/** `.github/` 配下のファイルだけを走査し、違反した行を集める。 */
 const collectWorkflowViolations = (filePaths: readonly string[]): Violation[] => {
   const violations: Violation[] = []
 
   for (const relativePath of filePaths) {
-    if (!relativePath.startsWith(workflowDirectoryPrefix)) continue
+    if (!relativePath.startsWith(githubDirectoryPrefix)) continue
 
     const lines = readFileSync(join(repoRoot, relativePath), 'utf8').split(/\r?\n/)
 
@@ -192,7 +194,7 @@ const formatViolationReport = (violations: readonly Violation[]): string =>
  */
 const formatWorkflowViolationReport = (violations: readonly Violation[]): string =>
   [
-    `ワークフローで保存 Action の参照を ${violations.length} 件検出しました（.github/workflows/）。`,
+    `Action 定義で保存 Action の参照を ${violations.length} 件検出しました（.github/）。`,
     '認証セッション・Screenshot・Trace・HAR・Video などの機微な Artifact は CI から保存しない。',
     '',
     ...violations.map((violation) => `${violation.path}:${violation.line}`),
@@ -262,27 +264,32 @@ describe('禁止パターン（誤検出・検出漏れの回帰防止）', () =
   })
 })
 
-describe('ワークフローの保存物（.github/workflows）', () => {
-  it('機微な Artifact を保存する Action がワークフローに現れない', () => {
-    const workflowFiles = collectTargetFiles().filter((relativePath) =>
-      relativePath.startsWith(workflowDirectoryPrefix),
+describe('Action 定義の保存物（.github）', () => {
+  it('機微な Artifact を保存する Action がワークフローと composite action に現れない', () => {
+    const actionDefinitionFiles = collectTargetFiles().filter((relativePath) =>
+      relativePath.startsWith(githubDirectoryPrefix),
     )
 
     // 列挙の配線が壊れて対象 0 件になっても成功してしまう事故を防ぐ。
-    expect(workflowFiles.length, '検査対象が 0 件です（列挙の配線を確認してください）').toBeGreaterThan(0)
+    expect(actionDefinitionFiles.length, '検査対象が 0 件です（列挙の配線を確認してください）').toBeGreaterThan(0)
 
-    const violations = collectWorkflowViolations(workflowFiles)
+    const violations = collectWorkflowViolations(actionDefinitionFiles)
     expect(violations, formatWorkflowViolationReport(violations)).toEqual([])
   })
 })
 
-describe('ワークフロー禁止パターン（誤検出・検出漏れの回帰防止）', () => {
+describe('保存 Action の禁止パターン（誤検出・検出漏れの回帰防止）', () => {
   const cases: Array<[string, boolean]> = [
-    // 検出する（バージョンや前置きの有無、行の位置を問わない）
+    // 検出する（バージョンや SHA 固定、大文字表記、前置きの有無、行の位置を問わない）
     ['uses: actions/upload-artifact@v7', true],
     ['      - uses: actions/upload-artifact@v7', true],
     ['uses: actions/upload-artifact', true],
-    // 検出しない（保存以外の Action と通常のコマンド）
+    // SHA 固定形式でも repo 名で検出できる（バージョンコメントの有無を問わない）
+    ['uses: actions/upload-artifact@7d29b5b9e8b3f46f4f7e8b8e6b9c0b1c2d3e4f50 # v4.6.2', true],
+    ['uses: Actions/Upload-Artifact@v7', true], // 大文字表記（大文字小文字は問わない）
+    // 検出しない（保存以外の Action、コメント行、run: 内の文字列）
+    ['# upload-artifact による保存は行わない（方針のメモ）', false],
+    ['run: echo "upload-artifact は使わない"', false],
     ['uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', false],
     ['uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', false],
     ['uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413', false],

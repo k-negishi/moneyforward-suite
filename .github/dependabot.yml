@@ -1,0 +1,14 @@
+# GitHub Actions の参照はコミット SHA に固定しているため、更新は Dependabot の PR 経由で行う。
+# Dependabot は SHA 固定でも、併記したバージョンコメント（例: # v7.0.1）を手がかりに
+# SHA とコメントをまとめて更新する。週次で全 Action を 1 つの PR にグループ化し、
+# レビューと検証の往復を抑える。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - '*'
