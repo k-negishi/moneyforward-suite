@@ -68,7 +68,9 @@ pnpm --filter @mf-suite/adapter-moneyforward-playwright session:check   # 保存
 | 上書き | 環境変数 `MF_SESSION_FILE` に絶対パスを指定する（相対パスは受け付けない） |
 | 権限 | ファイル 0600・新規作成するディレクトリ 0700（既存ディレクトリの権限は変更しない） |
 
-`session:check` は保存済みセッションを読み込み、有効性を確認する。`status=...` を stdout に出し、状態に応じた終了コードで停止する。
+`MF_SESSION_FILE` で上書きする場合は、git 管理外かつ他者と共有しない場所を指定する（セッションは Secret として扱う）。
+
+`session:check` は保存済みセッションを読み込み、有効性を確認する。stdout には `status=...` の 1 行（有効時は保存先の表示 1 行を追加）を出し、状態に応じた終了コードで停止する。
 
 | status | 終了コード | 意味と対処 |
 |---|---|---|
@@ -76,9 +78,9 @@ pnpm --filter @mf-suite/adapter-moneyforward-playwright session:check   # 保存
 | `SESSION_MISSING` | 1 | セッションが無い。`session:login` で生成する |
 | `SESSION_INVALID` | 1 | 破損、または他ユーザーが読める権限。`session:login` で作り直す |
 | `AUTH_REQUIRED` | 2 | 失効。`session:login` で再生成する |
-| `TEMPORARY_FAILURE` | 1 | 判定不能（通信・ページ取得の失敗など）。時間を置いて再実行する |
+| `TEMPORARY_FAILURE` | 1 | 判定不能（通信・ページ取得の失敗など）。時間を置いて再実行し、改善しなければ `session:login` で作り直す |
 
-失効・欠如・破損のときは、再生成のコマンドを stderr に固定文言で案内する（stdout は `status=...` の 1 行のまま）。Cookie・セッショントークンの値はどの出力にも含めない。
+失効・欠如・破損のときは、再生成のコマンドを stderr に固定文言で案内する。出力の契約は、stdout が `status=...` 行（有効時は保存先の表示 1 行を追加）、stderr が再生成案内などの固定文言とする。Cookie・セッショントークンの値はどの出力にも含めない。設定エラー（`MF_SESSION_FILE` の相対パス指定など）も stderr に固定文言で案内し、`TEMPORARY_FAILURE` で停止する。
 
 トラブルシュート:
 

@@ -2,11 +2,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { SessionState } from '@mf-suite/security'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { SessionLoginDependencies } from '../src/cli/session-cli.js'
 import {
   runSessionLogin,
   SESSION_CHECK_EXIT_CODE_BY_STATUS,
+  SESSION_CONFIG_ERROR_GUIDANCE,
   SESSION_LOGIN_CHALLENGE_NOTICE,
   SESSION_LOGIN_ENTER_PROMPT,
   SESSION_LOGIN_EXIT_CODE_BY_STATUS,
@@ -217,14 +218,18 @@ describe('runSessionLogin', () => {
     expect(prompts).toEqual([SESSION_LOGIN_ENTER_PROMPT])
   })
 
-  it('例外の内容を出力せず TEMPORARY_FAILURE で 1 を返す', async () => {
+  it('設定エラー（相対パス指定）→ 固定文言を stderr に出して 1、指定値は出さない', async () => {
     const stdout: string[] = []
     const stderr: string[] = []
+    const relativePath = 'synthetic-relative-session.json'
+    const runManualLogin = vi.fn(() =>
+      Promise.resolve<LoginSessionResult>({ status: 'SESSION_SAVED' }),
+    )
     const dependencies: SessionLoginDependencies = {
       resolveSessionFilePath: () => {
-        throw new Error('synthetic-exception-value')
+        throw new Error(`MF_SESSION_FILE には絶対パスを指定してください: ${relativePath}`)
       },
-      runManualLogin: () => Promise.resolve<LoginSessionResult>({ status: 'SESSION_SAVED' }),
+      runManualLogin,
       waitForEnter: () => Promise.resolve(true),
       writeStdout: (line) => {
         stdout.push(line)
@@ -238,7 +243,8 @@ describe('runSessionLogin', () => {
 
     expect(exitCode).toBe(1)
     expect(stdout).toEqual(['status=TEMPORARY_FAILURE'])
-    expect(stdout.join('\n')).not.toContain('synthetic-exception-value')
-    expect(stderr).toEqual([])
+    expect(stderr).toEqual([SESSION_CONFIG_ERROR_GUIDANCE])
+    expect([...stdout, ...stderr].join('\n')).not.toContain(relativePath)
+    expect(runManualLogin).not.toHaveBeenCalled()
   })
 })

@@ -8,7 +8,7 @@ import type { LoginSessionResult } from '../moneyforward/page-client.js'
  * セッション CLI（session:login / session:check）の状態語彙・終了コード・固定文言と実行本体。
  * エントリポイントから切り離して依存を注入可能にし、実ブラウザ・実サービスへ触れずに
  * 出力と終了コードの契約を単体テストで固定できるようにする。
- * 出力は stdout の `status=...` 1 行を契約とし、人間向けの案内は stderr へ固定文言で出す。
+ * 出力の契約: stdout は `status=...` の 1 行（成功時は保存先の表示 1 行を追加）、stderr は再生成案内などの固定文言。
  * Cookie・セッショントークン・URL・例外内容は出力しない（セッションの値は表示用に整形したパスのみ）。
  */
 
@@ -93,17 +93,43 @@ export const SESSION_LOGIN_ENTER_PROMPT = 'ログインが完了したら Enter 
 export const SESSION_REGENERATE_GUIDANCE =
   'セッションを作り直すには、次のコマンドで手動ログインしてください: pnpm --filter @mf-suite/adapter-moneyforward-playwright session:login'
 
-/** session:login の依存。エントリポイントが実装を差し込み、テストは合成実装を渡す。 */
-export interface SessionLoginDependencies {
+/**
+ * セッションファイルの設定エラーの案内（stderr・固定文言）。
+ * MF_SESSION_FILE の相対パス指定など、実行前に直せる設定の問題を可変値なしで案内する。
+ */
+export const SESSION_CONFIG_ERROR_GUIDANCE =
+  'セッションファイルの設定を確認してください: MF_SESSION_FILE を指定する場合は絶対パスにしてください'
+
+/** セッションファイルのパス解決と出力の依存（両 CLI で共通）。 */
+export interface SessionPathDependencies {
   readonly resolveSessionFilePath: () => string
+  readonly writeStdout: (line: string) => void
+  readonly writeStderr: (line: string) => void
+}
+
+/**
+ * セッションファイルのパスを解決する。設定エラー（MF_SESSION_FILE の相対パス指定など）では
+ * 例外の内容（指定値が混ざり得る）を出さず、固定文言を stderr に出して TEMPORARY_FAILURE を表示し、
+ * null を返す（呼び出し側はそのまま一時障害として終了する）。
+ */
+const tryResolveSessionFilePath = (dependencies: SessionPathDependencies): string | null => {
+  try {
+    return dependencies.resolveSessionFilePath()
+  } catch {
+    dependencies.writeStdout('status=TEMPORARY_FAILURE')
+    dependencies.writeStderr(SESSION_CONFIG_ERROR_GUIDANCE)
+    return null
+  }
+}
+
+/** session:login の依存。エントリポイントが実装を差し込み、テストは合成実装を渡す。 */
+export interface SessionLoginDependencies extends SessionPathDependencies {
   /** 手動ログインの実行（ブラウザ操作と保存の判断は page-client の実装が担う）。 */
   readonly runManualLogin: (
     sessionFilePath: string,
     waitForLogin: () => Promise<boolean>,
   ) => Promise<LoginSessionResult>
   readonly waitForEnter: (message: string) => Promise<boolean>
-  readonly writeStdout: (line: string) => void
-  readonly writeStderr: (line: string) => void
 }
 
 /**
@@ -111,11 +137,16 @@ export interface SessionLoginDependencies {
  * ブラウザで手動ログインし、認証済みと確認できた場合だけセッションを保存する
  * （Password は扱わない。認証チャレンジの検知・未完了では保存せず AUTH_REQUIRED とする。
  * 保存の判断は page-client の実装側にあり、この CLI は結果の表示と終了コードだけを担う）。
- * 例外の内容は出力しない（URL・DOM・Cookie が混ざり得るため）。
+ * 設定エラー（パス解決の失敗）は可変値の無い固定文言で案内し、その他の例外の内容は出力しない
+ * （URL・DOM・Cookie が混ざり得るため）。
  */
 export const runSessionLogin = async (dependencies: SessionLoginDependencies): Promise<number> => {
+  const sessionFilePath = tryResolveSessionFilePath(dependencies)
+  if (sessionFilePath === null) {
+    return SESSION_LOGIN_EXIT_CODE_BY_STATUS.TEMPORARY_FAILURE
+  }
+
   try {
-    const sessionFilePath = dependencies.resolveSessionFilePath()
     const result = await dependencies.runManualLogin(sessionFilePath, () => {
       dependencies.writeStdout(SESSION_LOGIN_INSTRUCTION)
       dependencies.writeStdout(SESSION_LOGIN_CHALLENGE_NOTICE)
@@ -138,24 +169,27 @@ export const runSessionLogin = async (dependencies: SessionLoginDependencies): P
 }
 
 /** session:check の依存。エントリポイントが実装を差し込み、テストは合成実装を渡す。 */
-export interface SessionCheckDependencies {
-  readonly resolveSessionFilePath: () => string
+export interface SessionCheckDependencies extends SessionPathDependencies {
   readonly readSessionFile: (filePath: string) => SessionLoadResult
   /** セッションの有効性の検証（ブラウザ操作は Adapter の Port 実装が担う）。 */
   readonly verifySession: (session: AuthSession) => Promise<SessionVerification>
-  readonly writeStdout: (line: string) => void
-  readonly writeStderr: (line: string) => void
 }
 
 /**
  * session:check を実行する。
  * セッションの欠如・破損は読み込みの時点で区別して停止し、読み込めた場合だけ検証で有効性を確認する
- * （欠如・破損ではブラウザを起動しない）。失効・欠如・破損では再生成の手順を固定文言で案内する
- * （stdout は status の契約のままにする）。例外の内容は出力しない（URL・DOM・Cookie が混ざり得るため）。
+ * （欠如・破損ではブラウザを起動しない）。失効・欠如・破損では再生成の手順を固定文言で stderr に案内する
+ * （stdout は `status=...` の 1 行。有効時は保存先の表示 1 行を追加する）。
+ * 設定エラー（パス解決の失敗）は可変値の無い固定文言で案内し、その他の例外の内容は出力しない
+ * （URL・DOM・Cookie が混ざり得るため）。
  */
 export const runSessionCheck = async (dependencies: SessionCheckDependencies): Promise<number> => {
+  const sessionFilePath = tryResolveSessionFilePath(dependencies)
+  if (sessionFilePath === null) {
+    return SESSION_CHECK_EXIT_CODE_BY_STATUS.TEMPORARY_FAILURE
+  }
+
   try {
-    const sessionFilePath = dependencies.resolveSessionFilePath()
     const load = dependencies.readSessionFile(sessionFilePath)
     const verification: SessionVerification =
       load.status === 'OK'

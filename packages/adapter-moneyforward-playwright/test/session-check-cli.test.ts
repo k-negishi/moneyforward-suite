@@ -7,7 +7,11 @@ import type { SessionState } from '@mf-suite/security'
 import { readSessionFile, saveSessionState } from '@mf-suite/security'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { runSessionCheck, SESSION_REGENERATE_GUIDANCE } from '../src/cli/session-cli.js'
+import {
+  runSessionCheck,
+  SESSION_CONFIG_ERROR_GUIDANCE,
+  SESSION_REGENERATE_GUIDANCE,
+} from '../src/cli/session-cli.js'
 
 // session:check の実行本体を、実ファイルシステム（一時ディレクトリ）と合成セッションで検証する。
 // 検証（verifySession）は合成実装を注入し、実サービス・実ブラウザへは接続しない。
@@ -68,6 +72,33 @@ describe('runSessionCheck', () => {
 
     return { exitCode, stdout, stderr, verifySession }
   }
+
+  it('設定エラー（相対パス指定）→ 固定文言を stderr に出して 1、検証を行わない', async () => {
+    const stdout: string[] = []
+    const stderr: string[] = []
+    const relativePath = 'synthetic-relative-session.json'
+    const verifySession = vi.fn(() => Promise.resolve<SessionVerification>('VALID'))
+
+    const exitCode = await runSessionCheck({
+      resolveSessionFilePath: () => {
+        throw new Error(`MF_SESSION_FILE には絶対パスを指定してください: ${relativePath}`)
+      },
+      readSessionFile,
+      verifySession,
+      writeStdout: (line) => {
+        stdout.push(line)
+      },
+      writeStderr: (line) => {
+        stderr.push(line)
+      },
+    })
+
+    expect(exitCode).toBe(1)
+    expect(stdout).toEqual(['status=TEMPORARY_FAILURE'])
+    expect(stderr).toEqual([SESSION_CONFIG_ERROR_GUIDANCE])
+    expect([...stdout, ...stderr].join('\n')).not.toContain(relativePath)
+    expect(verifySession).not.toHaveBeenCalled()
+  })
 
   it('欠如 → SESSION_MISSING で 1、検証（ブラウザ起動）を行わない', async () => {
     const { exitCode, stdout, stderr, verifySession } = await runCheck()
