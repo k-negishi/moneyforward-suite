@@ -64,11 +64,6 @@ export const buildLaunchOptions = (options: { readonly headless: boolean }): Lau
 export const buildContextOptions = (sessionState?: SessionState): BrowserContextOptions =>
   sessionState === undefined ? {} : { storageState: toStorageState(sessionState) }
 
-/** 更新可否の確認（読み取りのみ）の結果。 */
-export type RefreshTargetsOutcome =
-  | { readonly status: 'AVAILABLE' }
-  | { readonly status: RefreshBlocked }
-
 /** 手動ログインのセッション確立の結果。NOT_COMPLETED はユーザー操作の未完了（EOF 等）を表す。 */
 export type LoginSessionResult =
   | { readonly status: 'SESSION_SAVED' }
@@ -127,32 +122,6 @@ export const checkSession = async (
       return 'VALID'
     }
     return authCheck === 'AUTH_REQUIRED' ? 'AUTH_REQUIRED' : 'UNKNOWN'
-  } finally {
-    await browser.close()
-  }
-}
-
-/**
- * 更新可否の確認（読み取りのみ）。
- * 口座一覧ページを開き、認証確認と対象（一括更新コントロール・口座行）の特定まで行う。
- */
-export const inspectRefreshTargets = async (
-  sessionState: SessionState,
-  options: PageClientOptions,
-): Promise<RefreshTargetsOutcome> => {
-  const timeouts = resolveTimeouts(options.timeouts)
-  const browser = await chromium.launch(buildLaunchOptions(options))
-  try {
-    const page = await openAccountsPage(browser, sessionState, timeouts)
-    if (page === null) {
-      return { status: 'SESSION_INVALID' }
-    }
-
-    const preparation = await prepareAccountsPage(page, timeouts)
-    if (preparation.status !== 'READY') {
-      return { status: preparation.reason }
-    }
-    return { status: 'AVAILABLE' }
   } finally {
     await browser.close()
   }

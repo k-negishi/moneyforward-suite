@@ -1,4 +1,6 @@
 import type { ApplicationResult, ErrorCode, RefreshAccountsStatus } from '@mf-suite/core'
+import { isErrorCode } from '@mf-suite/core'
+import type { LogSink } from '@mf-suite/security'
 
 import type { AutomationHandler } from '../handler.js'
 
@@ -6,9 +8,20 @@ import type { AutomationHandler } from '../handler.js'
  * refresh-accounts CLI の引数解析・終了コード写像・実行本体。
  * エントリポイントから切り離して依存を注入可能にし、実ブラウザ・実サービスへ触れずに
  * 引数の受理範囲と終了コードの契約を単体テストで固定できるようにする。
- * 出力の契約: stdout は `status=...`（失敗時は `errorCode=...` を続ける）の 1 行、
- * stderr は使い方の案内（不正入力時）だけ。Secret・Cookie・金融情報は出力しない。
+ * 出力の契約: stdout は `status=...`（失敗時は `errorCode=...` を続ける）の 1 行だけ。
+ * stderr は使い方の案内（不正入力時）と構造化ログ（allow list の field だけの JSON 行）。
+ * Secret・Cookie・金融情報は出力しない。
  */
+
+/**
+ * 構造化ログを stderr へ 1 行ずつ書く sink。stdout は status 行の専有に保ち、
+ * 運用時のログ（JSON 行）と契約（status 行）が混ざらないようにする。
+ * 出力する field は構造化ロガーの allow list（timestamp / application / job / status /
+ * attempt / durationMs / errorCode）に限られる。
+ */
+export const writeStructuredLogToStderr: LogSink = (jsonLine) => {
+  process.stderr.write(`${jsonLine}\n`)
+}
 
 /** CLI が受け付けるオプション。ブラウザの表示方法だけを選べる（allow list の語彙）。 */
 export interface RefreshAccountsCliOptions {
@@ -99,20 +112,55 @@ export const parseRefreshAccountsArgs = (
   return { headless: mode !== 'headed' }
 }
 
+/** 成功系 status の語彙（終了コード対応表の key から導出し、二重定義を作らない）。 */
+const SUCCESS_STATUSES: ReadonlySet<string> = new Set(
+  Object.keys(REFRESH_ACCOUNTS_EXIT_CODE_BY_STATUS),
+)
+
+/** 値が成功系 status の語彙に含まれるかを判定する（実行時の境界の検証）。 */
+const isSuccessStatus = (value: unknown): value is Exclude<RefreshAccountsStatus, 'FAILURE'> =>
+  typeof value === 'string' && SUCCESS_STATUSES.has(value)
+
+/** 実行時検証を通した Application Result。語彙外の値は UNKNOWN（失敗）へ正規化済み。 */
+type NormalizedApplicationResult =
+  | { readonly status: 'FAILURE'; readonly errorCode: ErrorCode }
+  | { readonly status: Exclude<RefreshAccountsStatus, 'FAILURE'> }
+
+/**
+ * Application Result を実行時に検証して正規化する。status / errorCode が語彙外
+ * （キャスト混入など型を迂回した値）の場合は UNKNOWN（失敗）へ落とし、生の値が
+ * 出力へ流れる経路を断つ（fail closed。判定不能は再試行可能側の 1 へ集約する）。
+ */
+const normalizeApplicationResult = (result: ApplicationResult): NormalizedApplicationResult => {
+  if (result.status === 'FAILURE') {
+    const errorCode: unknown = result.errorCode
+    return { status: 'FAILURE', errorCode: isErrorCode(errorCode) ? errorCode : 'UNKNOWN' }
+  }
+  const status: unknown = result.status
+  if (isSuccessStatus(status)) {
+    return { status }
+  }
+  return { status: 'FAILURE', errorCode: 'UNKNOWN' }
+}
+
 /**
  * Application Result を出力の 1 行へ写す（status と errorCode だけ。自由文字列は載せない）。
  * 失敗は `status=FAILURE errorCode=...`、成功系は `status=...` の 1 行にする。
  */
-const formatApplicationResult = (result: ApplicationResult): string =>
-  result.status === 'FAILURE'
-    ? `status=${result.status} errorCode=${result.errorCode}`
-    : `status=${result.status}`
+const formatApplicationResult = (result: ApplicationResult): string => {
+  const normalized = normalizeApplicationResult(result)
+  return normalized.status === 'FAILURE'
+    ? `status=FAILURE errorCode=${normalized.errorCode}`
+    : `status=${normalized.status}`
+}
 
 /** Application Result を終了コードへ写す（失敗は errorCode、成功系は status の対応表で引く）。 */
-export const toExitCode = (result: ApplicationResult): number =>
-  result.status === 'FAILURE'
-    ? REFRESH_ACCOUNTS_EXIT_CODE_BY_ERROR_CODE[result.errorCode]
-    : REFRESH_ACCOUNTS_EXIT_CODE_BY_STATUS[result.status]
+export const toExitCode = (result: ApplicationResult): number => {
+  const normalized = normalizeApplicationResult(result)
+  return normalized.status === 'FAILURE'
+    ? REFRESH_ACCOUNTS_EXIT_CODE_BY_ERROR_CODE[normalized.errorCode]
+    : REFRESH_ACCOUNTS_EXIT_CODE_BY_STATUS[normalized.status]
+}
 
 /** CLI の依存。エントリポイントが実装を差し込み、テストは合成実装を渡す。 */
 export interface RefreshAccountsCliDependencies {

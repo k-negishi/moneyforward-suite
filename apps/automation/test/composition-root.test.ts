@@ -201,6 +201,30 @@ describe('Composition Root', () => {
       })
     })
 
+    it('logSink を渡すと構造化ログの出力先を差し替えられる（既定の stdout を使わない）', async () => {
+      const filePath = writeSyntheticSessionFile(JSON.stringify(SYNTHETIC_SESSION_STATE))
+      const moneyForward = createMoneyForward()
+      const logLines: string[] = []
+
+      const handler = createLocalAutomation(
+        {
+          headless: false,
+          sessionFilePath: filePath,
+          logSink: (jsonLine) => logLines.push(jsonLine),
+        },
+        { moneyForward: moneyForward.port },
+      )
+
+      await expect(handler({ job: 'refresh-accounts' })).resolves.toEqual({ status: 'SUCCESS' })
+
+      // ログは注入した sink へ出す（logger を差し替えずに出力先を選べる。CLI の stdout 契約を守る口）。
+      const events = logLines.map(
+        (line) => JSON.parse(line) as { application: string; status: string },
+      )
+      expect(events.map((event) => event.status)).toEqual(['STARTED', 'SUCCESS'])
+      expect(events.every((event) => event.application === 'automation')).toBe(true)
+    })
+
     it('パスの指定を省略した場合は security の既定解決（MF_SESSION_FILE）に従う', async () => {
       const filePath = writeSyntheticSessionFile(JSON.stringify(SYNTHETIC_SESSION_STATE))
       const previous = process.env[SESSION_FILE_ENV_VAR]

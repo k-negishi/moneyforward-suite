@@ -12,7 +12,7 @@ import type {
   SessionVerification,
 } from '@mf-suite/core'
 import { isErrorCode } from '@mf-suite/core'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   RefreshAccountsCliDependencies,
   RefreshAccountsCliOptions,
@@ -24,6 +24,7 @@ import {
   REFRESH_ACCOUNTS_USAGE,
   runRefreshAccounts,
   toExitCode,
+  writeStructuredLogToStderr,
 } from '../src/cli/refresh-accounts-cli.js'
 import { createLocalAutomation } from '../src/composition-root.js'
 
@@ -94,6 +95,35 @@ const createCli = (result: ApplicationResult | (() => Promise<ApplicationResult>
       writeStderr: (line) => {
         stderr.push(line)
       },
+    },
+  }
+}
+
+/**
+ * process.stdout / process.stderr へ実際に書かれた内容を行単位で capture する。
+ * CLI の出力契約（stdout は status 行だけ）を、依存の差し替えではなく実測で固定するために使う。
+ */
+const captureProcessOutput = (): {
+  readonly stdout: string[]
+  readonly stderr: string[]
+  readonly restore: () => void
+} => {
+  const stdout: string[] = []
+  const stderr: string[] = []
+  const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+    stdout.push(String(chunk))
+    return true
+  })
+  const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+    stderr.push(String(chunk))
+    return true
+  })
+  return {
+    stdout,
+    stderr,
+    restore: () => {
+      stdoutSpy.mockRestore()
+      stderrSpy.mockRestore()
     },
   }
 }
@@ -447,5 +477,83 @@ describe('Composition Root 経由の組み立て', () => {
     expect(exitCode).toBe(2)
     expect(stdout).toEqual(['status=FAILURE errorCode=SESSION_INVALID'])
     expect(moneyForward.verifyCalls()).toBe(0)
+  })
+
+  it('実 Composition Root に本番と同じ stderr sink を渡すと、stdout は status 行 1 行に固定される', async () => {
+    const filePath = writeSyntheticSessionFile(JSON.stringify(SyntheticSessionState))
+    const moneyForward = createMoneyForward()
+    const captured = captureProcessOutput()
+    try {
+      const exitCode = await runRefreshAccounts(
+        {
+          createHandler: (options) =>
+            createLocalAutomation(
+              {
+                headless: options.headless,
+                sessionFilePath: filePath,
+                // エントリポイントと同じ sink を渡し、logger は差し替えず実物を通す。
+                logSink: writeStructuredLogToStderr,
+              },
+              { moneyForward: moneyForward.port },
+            ),
+          writeStdout: (line) => {
+            process.stdout.write(`${line}\n`)
+          },
+          writeStderr: (line) => {
+            process.stderr.write(`${line}\n`)
+          },
+        },
+        [],
+      )
+
+      expect(exitCode).toBe(0)
+      // stdout は契約の 1 行だけ（構造化ログの JSON 行が混ざらない）。
+      expect(captured.stdout).toEqual(['status=SUCCESS\n'])
+      // 構造化ログ（開始と完了の 2 件）は stderr へ出る。
+      const logLines = captured.stderr.filter((line) => line.trim() !== '')
+      expect(logLines).toHaveLength(2)
+      const events = logLines.map((line) => JSON.parse(line) as { job: string; status: string })
+      expect(events.map((event) => event.status)).toEqual(['STARTED', 'SUCCESS'])
+      expect(events.every((event) => event.job === 'refresh-accounts')).toBe(true)
+    } finally {
+      captured.restore()
+    }
+  })
+})
+
+describe('語彙外の値の防御（型を迂回した値の混入）', () => {
+  it('語彙外の status は UNKNOWN（1）へ落とし、生の値を出力しない', async () => {
+    const cli = createCli({ status: 'SYNTHETIC_OK' } as unknown as ApplicationResult)
+
+    const exitCode = await runRefreshAccounts(cli.dependencies, [])
+
+    expect(exitCode).toBe(1)
+    expect(cli.stdout).toEqual(['status=FAILURE errorCode=UNKNOWN'])
+    expect(cli.stderr).toEqual([])
+    expect([...cli.stdout, ...cli.stderr].join('\n')).not.toContain('SYNTHETIC_OK')
+  })
+
+  it('語彙外の errorCode は UNKNOWN（1）へ落とし、生の値を出力しない', async () => {
+    const cli = createCli({
+      status: 'FAILURE',
+      errorCode: 'SYNTHETIC_LEAK',
+    } as unknown as ApplicationResult)
+
+    const exitCode = await runRefreshAccounts(cli.dependencies, [])
+
+    expect(exitCode).toBe(1)
+    expect(cli.stdout).toEqual(['status=FAILURE errorCode=UNKNOWN'])
+    expect(cli.stderr).toEqual([])
+    expect([...cli.stdout, ...cli.stderr].join('\n')).not.toContain('SYNTHETIC_LEAK')
+  })
+
+  it('toExitCode も語彙外の値では UNKNOWN の終了コード（1）を返す', () => {
+    expect(toExitCode({ status: 'SYNTHETIC_OK' } as unknown as ApplicationResult)).toBe(1)
+    expect(
+      toExitCode({
+        status: 'FAILURE',
+        errorCode: 'SYNTHETIC_LEAK',
+      } as unknown as ApplicationResult),
+    ).toBe(1)
   })
 })
