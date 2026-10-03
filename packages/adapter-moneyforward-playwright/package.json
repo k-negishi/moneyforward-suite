@@ -12,6 +12,11 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -p tsconfig.check.json",
-    "test": "vitest run --config ../../vitest.config.ts --project @mf-suite/adapter-moneyforward-playwright"
+    "test": "vitest run --config ../../vitest.config.ts --project @mf-suite/adapter-moneyforward-playwright",
+    "spike:login": "pnpm build && node dist/spike/login.js",
+    "spike:refresh": "pnpm build && node dist/spike/refresh.js"
+  },
+  "dependencies": {
+    "playwright": "^1.63.0"
   }
 }

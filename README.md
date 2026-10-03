@@ -2,7 +2,7 @@
 
 MoneyForward ME を中心とした個人向けの自動化処理を、ひとつのモノレポに集約する。
 
-Web 版 MoneyForward ME で手動実行している更新操作を定期実行に置き換える（第 1 弾はモバイル Suica の更新）。将来的には金融機関の更新・PayPay の取り込み・Dashboard へ広げる。
+Web 版 MoneyForward ME で手動実行している更新操作を定期実行に置き換える（対象は金融機関のデータ一括更新）。将来的には PayPay の取り込み・Dashboard へ広げる。
 
 ## 設計の柱
 
@@ -36,6 +36,16 @@ corepack を使っていない環境では 1 行目は不要。`pnpm-lock.yaml` 
 | `pnpm clean` | ビルド生成物（`dist` / `*.tsbuildinfo`）を削除する |
 | `pnpm install --frozen-lockfile` | lockfile を変更せずに再現インストールする（CI 想定） |
 
+### MoneyForward ME 操作の暫定 CLI（spike）
+
+実機で認証セッションの保存と、金融機関のデータ一括更新の実行・受付確認を試すための暫定 CLI。先に `pnpm --filter @mf-suite/adapter-moneyforward-playwright exec playwright install chromium` でブラウザを取得しておく。
+
+```sh
+pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:login   # headed で手動ログインし、セッションを .local/ に保存する
+pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:refresh   # 一括更新コントロールと対象行の特定を確認する（既定は headless・読み取りのみ）
+pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:refresh --execute   # 一括更新を実行し、行ごとの変化（更新日時など）から受付を確認する（pnpm では引数を直接渡す）
+```
+
 ## workspace 構成
 
 - `apps/automation`（`@mf-suite/automation`）— 実行エントリ。handler / composition-root / job-router / cli は PoC 実装で追加する
@@ -51,8 +61,8 @@ corepack を使っていない環境では 1 行目は不要。`pnpm-lock.yaml` 
 - 相対 import には `.js` 拡張子を付ける（ESM / NodeNext の解決規則）。package 間 import を追加したら、`tsconfig.json` の `references` と `tsconfig.check.json` の `paths`（tsconfig ファイルの位置基準）も更新する。
 - `packages/core` は Framework / Runtime 非依存。playwright / aws-sdk / appium 等を持ち込まない（[ADR-0006](docs/adr/0006-core-runtime-independence.md)）。
 - テストは各 package の `test/`（`src/` の外）に置く。ビルドに含まれず `dist` へ出ず、型検査は `tsconfig.check.json` が対象にする。`@mf-suite/*` の package 名 import は、テスト実行時に `vitest.config.ts` の alias で各 package の `src/index.ts` へ解決される（テストはビルド不要）。リポジトリ横断の検査は `tests/`（workspace package ではない）に置き、vitest の `repo-policy` プロジェクトで実行され、型検査は `tests/tsconfig.check.json` が対象にする。
-- Playwright のブラウザ取得（`pnpm exec playwright install chromium`）は、Playwright 依存を追加する PoC 実装のセットアップ手順で行う。
-- CLI を実行する script（例: `refresh-suica`）は `pnpm build` を前置する（ビルド忘れで古い `dist` を実行する事故を防ぐ。実装は PoC 実装で行う）。
+- Playwright のブラウザ取得は `pnpm --filter @mf-suite/adapter-moneyforward-playwright exec playwright install chromium` で行う（spike の実行前に必要）。
+- CLI を実行する script（例: `spike:refresh`）は `pnpm build` を前置する（ビルド忘れで古い `dist` を実行する事故を防ぐ。実装は PoC 実装で行う）。
 
 ## 機密情報の取り扱い
 
