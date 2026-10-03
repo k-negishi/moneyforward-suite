@@ -10,6 +10,7 @@ export { createAwsAutomation, createLocalAutomation } from './composition-root.j
 export type {
   AutomationHandler,
   AutomationHandlerDependencies,
+  JobExecutors,
   RefreshAccountsExecutor,
 } from './handler.js'
 export { createAutomationHandler } from './handler.js'

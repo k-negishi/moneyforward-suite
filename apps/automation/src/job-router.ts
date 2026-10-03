@@ -44,6 +44,14 @@ const isInputObject = (value: unknown): value is Record<string, unknown> =>
 const isAllowedJobName = (value: unknown): value is JobName =>
   typeof value === 'string' && ALLOWED_JOB_SET.has(value)
 
+/**
+ * own property の値だけを読む。継承フィールド（Object.create のプロトタイプや
+ * Object.prototype 汚染）経由の値は読まない（余剰フィールド検査は own のキーしか見ないため、
+ * 継承経由で実行内容へ値が混ざる経路をここで断つ）。
+ */
+const readOwnField = (input: Record<string, unknown>, field: string): unknown =>
+  Object.hasOwn(input, field) ? input[field] : undefined
+
 /** attempt が 1 起点の範囲内の整数かを判定する（文字列・小数・NaN・範囲外を弾く）。 */
 const isAttempt = (value: unknown): value is number =>
   typeof value === 'number' &&
@@ -62,6 +70,7 @@ const invalidJob = (): DomainError => createDomainError('INVALID_JOB')
  * 受理するのは `{ job: 'refresh-accounts', attempt?: 1..3 }` の形だけとし、
  * 未知の Job・job の欠落・形式不正（型違い・小数・範囲外）・余剰フィールドは
  * すべて INVALID_JOB で拒否する（ADR-0010 の禁止例を受け付けない）。
+ * job / attempt は own property の値だけを読み、継承フィールド経由の値は使わない。
  */
 export const routeJob = (input: unknown): Result<JobInvocation> => {
   if (!isInputObject(input)) {
@@ -72,12 +81,12 @@ export const routeJob = (input: unknown): Result<JobInvocation> => {
     return { ok: false, error: invalidJob() }
   }
 
-  const job = input.job
+  const job = readOwnField(input, 'job')
   if (!isAllowedJobName(job)) {
     return { ok: false, error: invalidJob() }
   }
 
-  const attempt = input.attempt
+  const attempt = readOwnField(input, 'attempt')
   // 明示的な undefined は省略と同じ扱いにする（JSON には現れないが、JS の呼び出しでは起こり得る）。
   if (attempt !== undefined && !isAttempt(attempt)) {
     return { ok: false, error: invalidJob() }

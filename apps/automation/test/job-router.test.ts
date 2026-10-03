@@ -47,6 +47,22 @@ describe('Job Router', () => {
     })
   })
 
+  it('プロトタイプ継承の job は読まない（継承フィールドで余剰検査をすり抜けさせない）', () => {
+    expectRejected(Object.create({ job: 'refresh-accounts' }))
+  })
+
+  it('プロトタイプ継承の attempt は省略と同じ扱いにする（own の値だけを読む）', () => {
+    const input = Object.assign(Object.create({ attempt: 2 }), { job: 'refresh-accounts' })
+
+    expect(expectAccepted(input)).toEqual({ job: 'refresh-accounts', attempt: 1 })
+  })
+
+  it('プロトタイプを持たないオブジェクトでも own フィールドだけで受理する', () => {
+    const input = Object.assign(Object.create(null), { job: 'refresh-accounts' })
+
+    expect(expectAccepted(input)).toEqual({ job: 'refresh-accounts', attempt: 1 })
+  })
+
   it('余剰フィールドを持つ入力は、許可 Job でも拒否する', () => {
     expectRejected({ job: 'refresh-accounts', url: 'https://example.invalid/' })
     expectRejected({ job: 'refresh-accounts', selector: '#target' })

@@ -10,7 +10,10 @@ import type { SecretsManagerClientLike } from './secret-store.js'
 
 /** client 生成の設定。 */
 export interface CreateSecretsManagerClientOptions {
-  /** AWS リージョン。省略時は SDK の既定解決（環境変数・共有設定）に任せる。 */
+  /**
+   * AWS リージョン。省略時は SDK の既定解決（環境変数・共有設定）に任せる。
+   * 前後の空白は除去し、空文字・空白のみは省略と同じ扱いにする。
+   */
   readonly region?: string
 }
 
@@ -21,6 +24,11 @@ export interface CreateSecretsManagerClientOptions {
 export const createSecretsManagerClient = (
   options: CreateSecretsManagerClientOptions = {},
 ): SecretsManagerClientLike => {
-  const region = options.region
-  return region === undefined ? new SecretsManagerClient({}) : new SecretsManagerClient({ region })
+  // 空白を除去し、空になった指定は「未指定」として SDK の既定解決に委ねる
+  // （空の region で生成して実行時に失敗する経路を作らない。空 secretName を拒否する
+  // 構成側の検証とも整合させる）。
+  const region = options.region?.trim()
+  return region === undefined || region.length === 0
+    ? new SecretsManagerClient({})
+    : new SecretsManagerClient({ region })
 }

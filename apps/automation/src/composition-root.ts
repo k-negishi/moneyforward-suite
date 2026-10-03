@@ -8,7 +8,7 @@ import { PlaywrightMoneyForwardAdapter } from '@mf-suite/adapter-moneyforward-pl
 import type { LoggerPort, MoneyForwardPort, SecretStorePort } from '@mf-suite/core'
 import { RefreshAccountsUseCase } from '@mf-suite/core'
 import { createStructuredLogger, resolveSessionFilePath } from '@mf-suite/security'
-import type { AutomationHandler } from './handler.js'
+import type { AutomationHandler, JobExecutors } from './handler.js'
 import { createAutomationHandler } from './handler.js'
 import type { SessionProvider } from './session-provider.js'
 import { createSecretStoreSessionProvider, createSessionFileProvider } from './session-provider.js'
@@ -57,6 +57,14 @@ const createUseCase = (
   logger: LoggerPort,
 ): RefreshAccountsUseCase => new RefreshAccountsUseCase({ moneyForward, logger })
 
+/**
+ * Job 名 → 実行担当の対応表を組み立てる。対応の網羅は JobExecutors（Record<JobName, ...>）が
+ * 型で強制するため、Job を追加したときの対応漏れはここでコンパイルエラーになる。
+ */
+const createExecutors = (moneyForward: MoneyForwardPort, logger: LoggerPort): JobExecutors => ({
+  'refresh-accounts': createUseCase(moneyForward, logger),
+})
+
 /** ログは allow-list の構造化ロガー（security）を使い、Application 名を束ねる。 */
 const createLogger = (overrides: AutomationOverrides): LoggerPort =>
   overrides.logger ?? createStructuredLogger({ application: 'automation' })
@@ -94,7 +102,7 @@ export const createLocalAutomation = (
     createSessionFileProvider(options.sessionFilePath ?? resolveSessionFilePath())
 
   return createAutomationHandler({
-    useCase: createUseCase(moneyForward, createLogger(overrides)),
+    executors: createExecutors(moneyForward, createLogger(overrides)),
     sessionProvider,
   })
 }
@@ -113,7 +121,7 @@ export const createAwsAutomation = (
   const sessionProvider = overrides.sessionProvider ?? createAwsSessionProvider(options, overrides)
 
   return createAutomationHandler({
-    useCase: createUseCase(moneyForward, createLogger(overrides)),
+    executors: createExecutors(moneyForward, createLogger(overrides)),
     sessionProvider,
   })
 }

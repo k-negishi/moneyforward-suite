@@ -1,25 +1,61 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createSecretsManagerClient } from '../src/secrets-manager/client.js'
 import { createSecretId } from '../src/secrets-manager/secret-store.js'
 
 /**
- * AWS SDK 境界の最小検証。実 AWS へは接続せず（client の生成は通信を伴わない）、
- * 生成した client が Port の要求する send を持つことだけを固定する。
- * これにより apps 側は AWS SDK を import せずに実 client を組み立てられる。
+ * client ファクトリの検証。AWS SDK の client 生成だけを mock に差し替え、実 AWS へ接続せずに
+ * region の正規化（trim・空文字は未指定）と、返り値が Port の要求する send を満たすことを固定する。
  */
 
-describe('createSecretsManagerClient', () => {
-  it('region 省略でも send を持つ client を生成する', () => {
-    const client = createSecretsManagerClient()
+const sdk = vi.hoisted(() => ({ constructedWith: [] as unknown[] }))
 
-    expect(typeof client.send).toBe('function')
+vi.mock('@aws-sdk/client-secrets-manager', () => ({
+  SecretsManagerClient: class {
+    constructor(options: unknown) {
+      sdk.constructedWith.push(options)
+    }
+
+    send(): Promise<unknown> {
+      return Promise.resolve({})
+    }
+  },
+  // secret-store が import する名前も満たす（このテストでは使わない）。
+  GetSecretValueCommand: class {
+    readonly input: unknown
+
+    constructor(input: unknown) {
+      this.input = input
+    }
+  },
+}))
+
+describe('createSecretsManagerClient', () => {
+  beforeEach(() => {
+    sdk.constructedWith.length = 0
   })
 
-  it('region を指定して client を生成する', () => {
-    const client = createSecretsManagerClient({ region: 'us-east-1' })
+  it('region の省略時は空の設定で生成し、SDK の既定解決に委ねる', () => {
+    createSecretsManagerClient()
 
-    expect(typeof client.send).toBe('function')
+    expect(sdk.constructedWith).toEqual([{}])
+  })
+
+  it('region は前後の空白を除去して SDK へ渡す', () => {
+    createSecretsManagerClient({ region: '  ap-northeast-1  ' })
+
+    expect(sdk.constructedWith).toEqual([{ region: 'ap-northeast-1' }])
+  })
+
+  it('空文字・空白のみの region は未指定として扱う', () => {
+    createSecretsManagerClient({ region: '' })
+    createSecretsManagerClient({ region: '   ' })
+
+    expect(sdk.constructedWith).toEqual([{}, {}])
+  })
+
+  it('生成した client は send を持つ', () => {
+    expect(typeof createSecretsManagerClient().send).toBe('function')
   })
 })
 

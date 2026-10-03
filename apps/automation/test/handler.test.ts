@@ -6,7 +6,7 @@ import { createAutomationHandler } from '../src/handler.js'
 import type { SessionProvider } from '../src/session-provider.js'
 
 /**
- * Automation Handler の検証。Use Case と Session Provider を fake に差し替え、
+ * Automation Handler の検証。Job 名 → 実行担当の対応表と Session Provider を fake に差し替え、
  * status / errorCode がそのまま透過すること（業務判断を再実装しないこと）、
  * 入力拒否・セッション取得失敗・例外が安全側へ写ること、出力に機密が現れないことを固定する。
  */
@@ -66,7 +66,7 @@ describe('Automation Handler', () => {
     const executor = createExecutor(() => Promise.resolve({ status: 'SUCCESS' }))
     const session = createSessionProvider(resolveSession)
     const handler = createAutomationHandler({
-      useCase: executor,
+      executors: { 'refresh-accounts': executor },
       sessionProvider: session.provider,
     })
 
@@ -77,7 +77,7 @@ describe('Automation Handler', () => {
     const executor = createExecutor(() => Promise.resolve({ status: 'PARTIAL_SUCCESS' }))
     const session = createSessionProvider(resolveSession)
     const handler = createAutomationHandler({
-      useCase: executor,
+      executors: { 'refresh-accounts': executor },
       sessionProvider: session.provider,
     })
 
@@ -90,7 +90,7 @@ describe('Automation Handler', () => {
     )
     const session = createSessionProvider(resolveSession)
     const handler = createAutomationHandler({
-      useCase: executor,
+      executors: { 'refresh-accounts': executor },
       sessionProvider: session.provider,
     })
 
@@ -104,7 +104,7 @@ describe('Automation Handler', () => {
     const executor = createExecutor(() => Promise.resolve({ status: 'SUCCESS' }))
     const session = createSessionProvider(resolveSession)
     const handler = createAutomationHandler({
-      useCase: executor,
+      executors: { 'refresh-accounts': executor },
       sessionProvider: session.provider,
     })
 
@@ -119,7 +119,7 @@ describe('Automation Handler', () => {
     const executor = createExecutor(() => Promise.resolve({ status: 'SUCCESS' }))
     const session = createSessionProvider(resolveSession)
     const handler = createAutomationHandler({
-      useCase: executor,
+      executors: { 'refresh-accounts': executor },
       sessionProvider: session.provider,
     })
 
@@ -132,7 +132,7 @@ describe('Automation Handler', () => {
     const executor = createExecutor(() => Promise.resolve({ status: 'SUCCESS' }))
     const session = createSessionProvider(resolveSession)
     const handler = createAutomationHandler({
-      useCase: executor,
+      executors: { 'refresh-accounts': executor },
       sessionProvider: session.provider,
     })
 
@@ -147,7 +147,7 @@ describe('Automation Handler', () => {
     const executor = createExecutor(() => Promise.resolve({ status: 'SUCCESS' }))
     const session = createSessionProvider(() => failSession('SESSION_MISSING'))
     const handler = createAutomationHandler({
-      useCase: executor,
+      executors: { 'refresh-accounts': executor },
       sessionProvider: session.provider,
     })
 
@@ -162,7 +162,7 @@ describe('Automation Handler', () => {
     const executor = createExecutor(() => Promise.reject(new Error(ERROR_MARKER)))
     const session = createSessionProvider(resolveSession)
     const handler = createAutomationHandler({
-      useCase: executor,
+      executors: { 'refresh-accounts': executor },
       sessionProvider: session.provider,
     })
 
@@ -176,7 +176,7 @@ describe('Automation Handler', () => {
     const executor = createExecutor(() => Promise.resolve({ status: 'SUCCESS' }))
     const session = createSessionProvider(() => Promise.reject(new Error(ERROR_MARKER)))
     const handler = createAutomationHandler({
-      useCase: executor,
+      executors: { 'refresh-accounts': executor },
       sessionProvider: session.provider,
     })
 
@@ -191,7 +191,7 @@ describe('Automation Handler', () => {
     const executor = createExecutor(() => Promise.resolve({ status: 'SUCCESS' }))
     const session = createSessionProvider(resolveSession)
     const handler = createAutomationHandler({
-      useCase: executor,
+      executors: { 'refresh-accounts': executor },
       sessionProvider: session.provider,
     })
 
