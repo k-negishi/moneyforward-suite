@@ -1,0 +1,56 @@
+# Pull Request と master への push で、Secret を使わない基本の品質ゲートを実行する。
+# 実アカウント・認証セッションは使わない（テストはブラウザ非依存に保つ）。
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# リポジトリ内容の読み取りだけを必要とする（Secret も書き込み権限も使わない）。
+permissions:
+  contents: read
+
+# 同一ブランチの多重実行をキャンセルして、古い実行結果を残さない。
+# master への push は履歴を残すためキャンセル対象にしない。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Playwright のブラウザ取得は CI では行わない（テストはブラウザ非依存で実行できる）。
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+jobs:
+  quality:
+    name: 品質ゲート（install / build / typecheck / test）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: リポジトリを取得する
+        uses: actions/checkout@v7
+
+      # corepack を使わず、package.json の packageManager（pnpm@12.8.1）と同じバージョンを導入する。
+      - name: pnpm を導入する（12.8.1）
+        uses: pnpm/action-setup@v6
+        with:
+          version: 12.8.1
+
+      - name: Node.js を導入する（.node-version と pnpm キャッシュ）
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: 依存を lockfile 固定でインストールする
+        run: pnpm install --frozen-lockfile
+
+      - name: 全 workspace をビルドする
+        run: pnpm build
+
+      - name: 全 workspace とリポジトリ横断テストを型検査する
+        run: pnpm typecheck
+
+      # 失敗時は Vitest の出力に project 名（@mf-suite/* と repo-policy）が出る。
+      - name: 全 workspace とリポジトリ横断のテストを実行する
+        run: pnpm test
