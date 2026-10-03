@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, lstatSync, readFileSync } from 'node:fs'
+import { lstatSync, readFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -112,34 +112,53 @@ interface Violation {
 }
 
 /**
- * 検査対象のファイルを git から列挙する。--exclude-standard により .gitignore 済みの
+ * git からファイルのパス一覧を列挙する。--exclude-standard により .gitignore 済みの
  * ファイル（.claude/plans/・.playwright-mcp/ 等のローカル専用ファイル）は含まれない。
- * 追跡済みと未追跡（ignore されていない新規ファイル）の両方を対象にする。
+ * --cached は追跡済み、--others は未追跡（ignore されていない新規ファイル）を返す。
  */
-const listRepoFiles = (): string[] =>
-  execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
+const listGitFiles = (source: '--cached' | '--others'): string[] =>
+  execFileSync('git', ['ls-files', '-z', source, '--exclude-standard'], {
     cwd: repoRoot,
     encoding: 'utf8',
   })
     .split('\0')
     .filter((path) => path.length > 0)
 
-/** 走査対象のファイル（リポジトリルートからの相対パス）を集める。 */
-const collectTargetFiles = (): string[] =>
-  listRepoFiles().filter((relativePath) => {
-    const absolutePath = join(repoRoot, relativePath)
+/**
+ * 検査対象のファイル。追跡状態は、列挙後にファイルが消えていた場合の扱い
+ * （未追跡は読み飛ばし・追跡は失敗）を決める。
+ */
+interface TargetFile {
+  /** リポジトリルートからの相対パス。 */
+  readonly path: string
+  /** git の未追跡ファイル（ignore されていない新規ファイル）か。 */
+  readonly untracked: boolean
+}
+
+/**
+ * 走査対象のファイル（リポジトリルートからの相対パスと追跡状態）を集める。
+ * 追跡済みと未追跡（ignore されていない新規ファイル）の両方を対象にする。
+ */
+const collectTargetFiles = (): TargetFile[] => {
+  const targets: TargetFile[] = [
+    ...listGitFiles('--cached').map((path) => ({ path, untracked: false })),
+    ...listGitFiles('--others').map((path) => ({ path, untracked: true })),
+  ]
+
+  return targets.filter((target) => {
+    const absolutePath = join(repoRoot, target.path)
 
     if (absolutePath === selfPath) {
       return false
     }
-    if (excludedDirectoryPrefixes.some((prefix) => relativePath.startsWith(prefix))) {
+    if (excludedDirectoryPrefixes.some((prefix) => target.path.startsWith(prefix))) {
       return false
     }
-    if (excludedFilePaths.has(relativePath)) {
+    if (excludedFilePaths.has(target.path)) {
       return false
     }
 
-    const baseName = relativePath.slice(relativePath.lastIndexOf('/') + 1)
+    const baseName = target.path.slice(target.path.lastIndexOf('/') + 1)
     if (
       !targetExtensions.has(extname(baseName).toLowerCase()) &&
       !extensionlessConfigFiles.has(baseName)
@@ -147,14 +166,51 @@ const collectTargetFiles = (): string[] =>
       return false
     }
 
-    // 未ステージで削除されたファイル（git の index に残っている）で落ちないよう存在を確認する。
-    if (!existsSync(absolutePath)) {
-      return false
+    // 存在確認と種別判定を 1 回の lstat にまとめる。existsSync による事前確認では、確認から
+    // 読み取りまでの間にファイルが消える隙間（TOCTOU）が残る。未ステージで削除されたファイル
+    // （git の index に残っている）や、列挙の直後に並列実行する他テストが一時ファイル（境界
+    // テストの probe 等）を削除した場合は、ここで除外する。列挙時点で存在しないファイルは
+    // 追跡状態を問わず対象外にする（読み取り時の扱いとは別）。
+    try {
+      // シンボリックリンク（AGENTS.md 等）は実体を二重に検査しないため対象外にする。
+      return !lstatSync(absolutePath).isSymbolicLink()
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        return false
+      }
+      throw error
     }
-
-    // シンボリックリンク（AGENTS.md 等）は実体を二重に検査しないため対象外にする。
-    return !lstatSync(absolutePath).isSymbolicLink()
   })
+}
+
+/**
+ * 読み取り対象のファイルが既に消えている（ENOENT）エラーか。
+ * git の列挙から読み取りまでの間に、並列実行する他テストが一時ファイル（境界テストの
+ * probe 等）を削除すると起こり得る。
+ */
+const isMissingFileError = (error: unknown): boolean => {
+  if (!(error instanceof Error) || !('code' in error)) {
+    return false
+  }
+  return error.code === 'ENOENT'
+}
+
+/**
+ * 検査対象のファイルを読み取る。列挙後に消えた未追跡ファイル（並列実行する他テストの
+ * 一時ファイル等）だけは読み飛ばして undefined を返す。追跡ファイルが消えているのは
+ * 列挙と実体の不整合で、読み飛ばすと検査が黙って弱まるためテストを失敗させる。
+ * ENOENT 以外の読み取り失敗も、これまでどおりテストを失敗させる。
+ */
+const readTargetFile = (target: TargetFile): string | undefined => {
+  try {
+    return readFileSync(join(repoRoot, target.path), 'utf8')
+  } catch (error) {
+    if (target.untracked && isMissingFileError(error)) {
+      return undefined
+    }
+    throw error
+  }
+}
 
 /** 行分割の改行パターン（CRLF / LF の両方を扱う。行番号を報告に使うため、ここで分割する）。 */
 const LINE_BREAK_PATTERN = /\r?\n/
@@ -172,15 +228,20 @@ const isForbiddenWorkflowLine = (line: string): boolean => {
 }
 
 /** 対象ファイルを走査し、違反した行を集める。 */
-const collectViolations = (filePaths: readonly string[]): Violation[] => {
+const collectViolations = (targets: readonly TargetFile[]): Violation[] => {
   const violations: Violation[] = []
 
-  for (const relativePath of filePaths) {
-    const lines = readFileSync(join(repoRoot, relativePath), 'utf8').split(LINE_BREAK_PATTERN)
+  for (const target of targets) {
+    const contents = readTargetFile(target)
+    if (contents === undefined) {
+      continue
+    }
+
+    const lines = contents.split(LINE_BREAK_PATTERN)
 
     lines.forEach((line, index) => {
       if (isForbiddenLine(line)) {
-        violations.push({ path: relativePath, line: index + 1 })
+        violations.push({ path: target.path, line: index + 1 })
       }
     })
   }
@@ -189,19 +250,24 @@ const collectViolations = (filePaths: readonly string[]): Violation[] => {
 }
 
 /** `.github/` 配下のファイルだけを走査し、違反した行を集める。 */
-const collectWorkflowViolations = (filePaths: readonly string[]): Violation[] => {
+const collectWorkflowViolations = (targets: readonly TargetFile[]): Violation[] => {
   const violations: Violation[] = []
 
-  for (const relativePath of filePaths) {
-    if (!relativePath.startsWith(githubDirectoryPrefix)) {
+  for (const target of targets) {
+    if (!target.path.startsWith(githubDirectoryPrefix)) {
       continue
     }
 
-    const lines = readFileSync(join(repoRoot, relativePath), 'utf8').split(LINE_BREAK_PATTERN)
+    const contents = readTargetFile(target)
+    if (contents === undefined) {
+      continue
+    }
+
+    const lines = contents.split(LINE_BREAK_PATTERN)
 
     lines.forEach((line, index) => {
       if (isForbiddenWorkflowLine(line)) {
-        violations.push({ path: relativePath, line: index + 1 })
+        violations.push({ path: target.path, line: index + 1 })
       }
     })
   }
@@ -242,6 +308,29 @@ describe('コメント規約（CLAUDE.md）', () => {
 
     const violations = collectViolations(targets)
     expect(violations, formatViolationReport(violations)).toEqual([])
+  })
+})
+
+describe('検査対象の読み取り（列挙後の消滅と I/O エラー）', () => {
+  it('列挙後に消えた未追跡ファイル（並列実行する他テストの一時ファイル等）は読み飛ばす', () => {
+    // git の列挙後・読み取り前に消えたファイルと同じ条件（読み取り時に存在しない）を作る。
+    // 0 件ガード（collectTargetFiles 側）と追跡ファイルの検査は変わらない。
+    expect(
+      collectViolations([
+        { path: 'packages/core/boundary-probe-vanished/sample.ts', untracked: true },
+      ]),
+    ).toEqual([])
+  })
+
+  it('列挙後に消えた追跡ファイルは例外にする（読み飛ばしで検査を弱めない）', () => {
+    expect(() =>
+      collectViolations([{ path: 'packages/core/vanished-tracked.ts', untracked: false }]),
+    ).toThrow('ENOENT')
+  })
+
+  it('ENOENT 以外の読み取り失敗は例外にする（未追跡でも読み飛ばさない）', () => {
+    // packages/core は実在するディレクトリ（読み取りは EISDIR で失敗する）。
+    expect(() => collectViolations([{ path: 'packages/core', untracked: true }])).toThrow()
   })
 })
 
@@ -299,8 +388,8 @@ describe('禁止パターン（誤検出・検出漏れの回帰防止）', () =
 
 describe('Action 定義の保存物（.github）', () => {
   it('機微な Artifact を保存する Action がワークフローと composite action に現れない', () => {
-    const actionDefinitionFiles = collectTargetFiles().filter((relativePath) =>
-      relativePath.startsWith(githubDirectoryPrefix),
+    const actionDefinitionFiles = collectTargetFiles().filter((target) =>
+      target.path.startsWith(githubDirectoryPrefix),
     )
 
     // 列挙の配線が壊れて対象 0 件になっても成功してしまう事故を防ぐ。
