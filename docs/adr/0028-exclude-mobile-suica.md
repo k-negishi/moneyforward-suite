@@ -1,6 +1,6 @@
 # 0028. モバイル Suica を対象から外し、初期 Job を金融機関のデータ一括更新に限定する
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-03
 
 ## Context
