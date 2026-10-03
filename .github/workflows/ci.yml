@@ -55,6 +55,11 @@ jobs:
       - name: 全 workspace とリポジトリ横断テストを型検査する
         run: pnpm typecheck
 
+      # 依存境界（Hexagonal Architecture）の違反を、レビュー以前に CI で止める。
+      # 違反時は検出した import の file:line と指定子が出力される。
+      - name: 依存境界（Architecture Test）を検証する
+        run: pnpm test:architecture
+
       # 失敗時は Vitest の出力に project 名（@mf-suite/* と repo-policy）が出る。
       - name: 全 workspace とリポジトリ横断のテストを実行する
         run: pnpm test

@@ -55,7 +55,7 @@ export default defineConfig({
         },
       })),
       {
-        // リポジトリ横断のポリシー検査（コメント規約の番号参照チェック）。
+        // リポジトリ横断のポリシー検査（コメント規約の番号参照・Action の保存物・依存境界）。
         extends: true,
         root: projectRoot('./tests'),
         resolve: { alias: workspaceAlias },

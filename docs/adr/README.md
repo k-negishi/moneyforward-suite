@@ -56,3 +56,4 @@
 | [0031](0031-moneyforward-port-operations.md) | MoneyForwardPort の操作を verifySession と refreshAccounts の 2 つに絞る | Proposed | 2026-10-03 |
 | [0032](0032-opaque-secret-values.md) | 認証セッションと Secret の値を opaque 型で表す | Proposed | 2026-10-03 |
 | [0033](0033-error-code-retry-classification.md) | ErrorCode の語彙と再試行可否を 1 つの対応表で定義する | Proposed | 2026-10-03 |
+| [0034](0034-architecture-test-detector.md) | Architecture Test を自作の import 検出器で実装する | Proposed | 2026-10-03 |

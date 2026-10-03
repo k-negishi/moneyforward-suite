@@ -11,6 +11,7 @@
     "build": "tsc -b",
     "typecheck": "tsc -b && pnpm -r --if-present run typecheck && tsc -p tests/tsconfig.check.json",
     "test": "vitest run",
+    "test:architecture": "vitest run --project repo-policy --passWithNoTests=false architecture",
     "clean": "tsc -b --clean && rm -rf apps/*/dist packages/*/dist"
   },
   "devDependencies": {
