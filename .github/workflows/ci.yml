@@ -1,5 +1,5 @@
 # Pull Request と master への push で、Secret を使わない基本の品質ゲートを実行する。
-# 実アカウント・認証セッションは使わない（テストはブラウザ非依存に保つ）。
+# 実アカウント・認証セッションは使わない（ブラウザテストは合成 HTML のみを描画する）。
 name: CI
 
 on:
@@ -18,7 +18,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Playwright のブラウザ取得は CI では行わない（テストはブラウザ非依存で実行できる）。
+  # pnpm install 時の postinstall によるブラウザ取得は抑止する（取得は下の明示的な
+  # playwright install ステップだけで行う。この変数は playwright install コマンド自体には
+  # 影響しないため、必要なブラウザはそちらで取得できる）。
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
 
 jobs:
@@ -48,6 +50,21 @@ jobs:
 
       - name: 依存を lockfile 固定でインストールする
         run: pnpm install --frozen-lockfile
+
+      # Adapter のブラウザテストは実 chromium を使う。取得物は lockfile（playwright の
+      # バージョン）に紐づけてキャッシュし、一致するキャッシュがあれば再取得しない。
+      - name: Playwright のブラウザをキャッシュする
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      # chromium だけを取得する（--with-deps でランナーの OS 依存も導入する）。
+      # 上記のキャッシュが当たればダウンロードはスキップされる。
+      - name: chromium を取得する（ブラウザテスト用）
+        run: pnpm --filter @mf-suite/adapter-moneyforward-playwright exec playwright install --with-deps chromium
 
       - name: 全 workspace をビルドする
         run: pnpm build

@@ -1,27 +1,26 @@
 import type { SessionState } from '@mf-suite/security'
-import type { Browser, BrowserContext, Locator, Page } from 'playwright'
-import { chromium } from 'playwright'
+import type { BrowserContext, Locator, Page } from 'playwright'
+
 import type { AuthStateSignals } from './auth-state.js'
 import { classifyAuthState } from './auth-state.js'
-import type { LocatorRoot, LocatorStrategy } from './locators.js'
+import type { LocatorRoot, LocatorStrategy, RefreshTimeouts } from './locators.js'
 import {
   ACCOUNT_ROW_STRATEGIES,
   AUTH_CHALLENGE_INPUT_SELECTOR,
   BULK_UPDATE_CONTROL_STRATEGIES,
   isSignInUrl,
-  ME_ACCOUNTS_URL,
-  NAVIGATION_TIMEOUT_MS,
-  TARGET_WAIT_TIMEOUT_MS,
 } from './locators.js'
 import { isRowSnapshotValid } from './row-changes.js'
 
 /**
- * ページ操作の下位ヘルパー。セッション状態の相互変換、認証確認、Locator 探索、ページ準備を担う。
+ * ページ操作の下位ヘルパー。セッション状態の相互変換、認証確認、Locator 探索、
+ * 開いたページの準備（認証・対象の特定）を担う。
  * 公開 API（セッション検証・更新可否の確認・一括更新の実行・手動ログイン）は page-client に置き、
  * 依存は page-client → page-helpers の一方向に保つ（受付の観測は page-client 側にある）。
  * ・URL / Selector / 操作を引数で受け付けない（ADR-0010）
  * ・戻り値は状態識別子・件数・真偽値のみ（金額・カード番号・Cookie・セッション・URL・行テキストは返さない）
  * ・Screenshot / HTML dump / HAR / Trace / Video を保存しない（ADR-0017）
+ * ・タイムアウトは注入された値だけを使い、テストは実時間を待たずに短縮する
  * Page / Locator はこのモジュールの外へ出さない（呼び出し側は構造化した結果だけを受け取る）。
  */
 
@@ -64,10 +63,8 @@ export type RefreshBlocked =
   | 'TARGET_AMBIGUOUS'
   | 'TEMPORARY_FAILURE'
 
-/**
- * Locator 探索の結果。
- */
-type Resolution =
+/** Locator 探索の結果。 */
+export type Resolution =
   | { readonly status: 'RESOLVED'; readonly locator: Locator }
   | { readonly status: 'TARGET_NOT_FOUND' }
   | { readonly status: 'TARGET_AMBIGUOUS' }
@@ -80,12 +77,13 @@ type Resolution =
 const resolveTarget = async (
   root: LocatorRoot,
   strategies: readonly LocatorStrategy[],
+  timeouts: RefreshTimeouts,
 ): Promise<Resolution> => {
   for (const strategy of strategies) {
     const visibleMatches = strategy(root).filter({ visible: true })
     const appeared = await visibleMatches
       .first()
-      .waitFor({ state: 'visible', timeout: TARGET_WAIT_TIMEOUT_MS })
+      .waitFor({ state: 'visible', timeout: timeouts.targetWaitMs })
       .then(() => true)
       .catch(() => false)
     if (!appeared) {
@@ -104,24 +102,28 @@ const resolveTarget = async (
  * 要素の可視テキストを取得する。金融情報・DOM を含み得るため、ログ・例外へは出さない。
  * 取得できない場合は空文字を返し、呼び出し側の判定（変化なし）で停止させる。
  */
-const readLocatorText = async (locator: Locator): Promise<string> => {
+const readLocatorText = async (locator: Locator, timeouts: RefreshTimeouts): Promise<string> => {
   try {
-    return await locator.innerText({ timeout: TARGET_WAIT_TIMEOUT_MS })
+    return await locator.innerText({ timeout: timeouts.targetWaitMs })
   } catch {
     return ''
   }
 }
 
 /** ページ全体の可視テキストを取得する（認証チャレンジ文言の探索用。取得できなければ空文字）。 */
-const readVisibleText = (page: Page): Promise<string> => readLocatorText(page.locator('body'))
+const readVisibleText = (page: Page, timeouts: RefreshTimeouts): Promise<string> =>
+  readLocatorText(page.locator('body'), timeouts)
 
 /**
  * 認証状態の観測値をページから集める（分類は auth-state.ts の純関数が行う）。
  * 入力欄は可視のものだけを数える（非表示のテンプレートや過去のフォームを拾わない）。
  */
-export const collectAuthStateSignals = async (page: Page): Promise<AuthStateSignals> => ({
+export const collectAuthStateSignals = async (
+  page: Page,
+  timeouts: RefreshTimeouts,
+): Promise<AuthStateSignals> => ({
   isSignInUrl: isSignInUrl(page.url()),
-  visibleText: await readVisibleText(page),
+  visibleText: await readVisibleText(page, timeouts),
   visibleChallengeInputCount: await page
     .locator(AUTH_CHALLENGE_INPUT_SELECTOR)
     .filter({ visible: true })
@@ -135,8 +137,9 @@ export const collectAuthStateSignals = async (page: Page): Promise<AuthStateSign
  */
 export const checkAuthentication = async (
   page: Page,
+  timeouts: RefreshTimeouts,
 ): Promise<'OK' | 'AUTH_REQUIRED' | 'TEMPORARY_FAILURE'> => {
-  const authState = classifyAuthState(await collectAuthStateSignals(page))
+  const authState = classifyAuthState(await collectAuthStateSignals(page, timeouts))
   if (authState === 'AUTHENTICATED') {
     return 'OK'
   }
@@ -144,16 +147,28 @@ export const checkAuthentication = async (
 }
 
 /**
+ * 一括更新コントロールをページ全体から特定する（読み取りのみ）。
+ * 0 件（TARGET_NOT_FOUND）・複数件（TARGET_AMBIGUOUS）は停止する（fail closed）。
+ */
+export const resolveBulkUpdateControl = (
+  page: Page,
+  timeouts: RefreshTimeouts,
+): Promise<Resolution> => resolveTarget(page, BULK_UPDATE_CONTROL_STRATEGIES, timeouts)
+
+/**
  * 更新対象の口座行（「更新」コントロールを含む行）を可視のものだけ列挙する。
  * 複数一致が正常（対象の口座が複数ある）のため、resolveTarget とは別に扱う。
  * どの戦略でも見つからない場合は null を返す（呼び出し側が停止する。fail closed）。
  */
-export const collectAccountRows = async (page: Page): Promise<readonly Locator[] | null> => {
+export const collectAccountRows = async (
+  page: Page,
+  timeouts: RefreshTimeouts,
+): Promise<readonly Locator[] | null> => {
   for (const strategy of ACCOUNT_ROW_STRATEGIES) {
     const visibleRows = strategy(page).filter({ visible: true })
     const appeared = await visibleRows
       .first()
-      .waitFor({ state: 'visible', timeout: TARGET_WAIT_TIMEOUT_MS })
+      .waitFor({ state: 'visible', timeout: timeouts.targetWaitMs })
       .then(() => true)
       .catch(() => false)
     if (!appeared) {
@@ -167,105 +182,101 @@ export const collectAccountRows = async (page: Page): Promise<readonly Locator[]
 }
 
 /** 行の可視テキストをまとめて取得する（取得できない行は空文字。ログ・例外へは出さない）。 */
-export const readRowsText = (rows: readonly Locator[]): Promise<readonly string[]> =>
-  Promise.all(rows.map((row) => readLocatorText(row)))
+export const readRowsText = (
+  rows: readonly Locator[],
+  timeouts: RefreshTimeouts,
+): Promise<readonly string[]> => Promise.all(rows.map((row) => readLocatorText(row, timeouts)))
 
-/** クリック前スナップショットの確定を試みる回数と間隔（表示直後の再描画で空テキストになるため）。 */
+/** スナップショット確定を試みる回数（表示直後の再描画で空テキストになるため、短間隔で再試行する）。 */
 const ROW_SNAPSHOT_ATTEMPTS = 3
-const ROW_SNAPSHOT_RETRY_INTERVAL_MS = 200
 
 /**
  * 空文字の行を含まない有効なスナップショットが得られるまで、短間隔で取得を再試行する。
  * 確定できない場合は null を返す（呼び出し側がクリックせずに停止する。fail closed）。
  */
-export const readValidRowsSnapshot = async (
+const readValidRowsSnapshot = async (
   page: Page,
   rows: readonly Locator[],
+  timeouts: RefreshTimeouts,
 ): Promise<readonly string[] | null> => {
   for (let attempt = 0; attempt < ROW_SNAPSHOT_ATTEMPTS; attempt += 1) {
-    const snapshot = await readRowsText(rows)
+    const snapshot = await readRowsText(rows, timeouts)
     if (isRowSnapshotValid(snapshot)) {
       return snapshot
     }
     if (attempt < ROW_SNAPSHOT_ATTEMPTS - 1) {
       // biome-ignore lint/nursery/noPlaywrightWaitForTimeout: 再試行回数に上限のある取得間隔（最大 2 回）で、行の再描画待ちは条件待ちへ置き換えられない。
-      await page.waitForTimeout(ROW_SNAPSHOT_RETRY_INTERVAL_MS)
+      await page.waitForTimeout(timeouts.snapshotIntervalMs)
     }
   }
   return null
 }
 
-/** 操作の準備が整ったページ。browser の close は呼び出し側が finally で行う。 */
-interface PreparedPage {
-  readonly browser: Browser
+/**
+ * クリック前の比較基準を作る。スナップショットを 2 回（間隔を空けて）観測し、
+ * 両方で一致した行だけを残す。一致しなかった行は null（不安定な行）とし、
+ * 比較の基準に使わない（自然変動する行をクリックへの反応と誤認しないため）。
+ * 有効な観測が得られない場合と、全行が不安定な場合は null を返し、呼び出し側は
+ * クリックせずに停止する（fail closed。無効な基準では受付を判定できない）。
+ */
+export const readStableRowsSnapshot = async (
+  page: Page,
+  rows: readonly Locator[],
+  timeouts: RefreshTimeouts,
+): Promise<readonly (string | null)[] | null> => {
+  const first = await readValidRowsSnapshot(page, rows, timeouts)
+  if (first === null) {
+    return null
+  }
+
+  // biome-ignore lint/nursery/noPlaywrightWaitForTimeout: 2 回観測の間隔（回数固定）。自然変動する行の検出には、行の再描画待ちではなく時間を空けた再観測が必要。
+  await page.waitForTimeout(timeouts.snapshotIntervalMs)
+
+  const second = await readValidRowsSnapshot(page, rows, timeouts)
+  if (second === null) {
+    return null
+  }
+
+  const stable = first.map((row, index) => (row === second[index] ? row : null))
+  return stable.every((row) => row === null) ? null : stable
+}
+
+/** 操作の準備が整った口座一覧ページ。Browser の close は呼び出し側が finally で行う。 */
+export interface PreparedAccountsPage {
   readonly page: Page
   readonly bulkControl: Locator
   readonly accountRows: readonly Locator[]
 }
 
-/** ページの準備結果。BLOCKED の場合、ブラウザは閉じたうえで理由だけを返す。 */
+/** ページの準備結果。BLOCKED の場合は理由を返す（Browser の close は呼び出し側の責務）。 */
 export type PagePreparation =
-  | { readonly status: 'READY'; readonly prepared: PreparedPage }
+  | { readonly status: 'READY'; readonly prepared: PreparedAccountsPage }
   | { readonly status: 'BLOCKED'; readonly reason: RefreshBlocked }
 
-/** ブラウザを閉じてから、続行できない理由を返す。 */
-const blocked = async (browser: Browser, reason: RefreshBlocked): Promise<PagePreparation> => {
-  await browser.close().catch(() => undefined)
-  return { status: 'BLOCKED', reason }
-}
-
 /**
- * ブラウザを起動し、口座一覧ページを開いて認証確認と対象の特定までを行う。
- * 続行できない場合はブラウザを閉じて理由を返す。READY の場合の close は呼び出し側の責務。
- * 起動・遷移の例外はそのまま投げる（呼び出し側が Result へ写す）。
+ * 開いた口座一覧ページで認証確認と対象（一括更新コントロール・口座行）の特定を行う。
+ * 続行できない場合は理由を返す（BLOCKED）。Browser は閉じない（呼び出し側が finally で閉じる）。
  */
-export const preparePage = async (
-  sessionState: SessionState,
-  options: { readonly headless: boolean },
+export const prepareAccountsPage = async (
+  page: Page,
+  timeouts: RefreshTimeouts,
 ): Promise<PagePreparation> => {
-  const browser = await chromium.launch({ headless: options.headless })
-  try {
-    // 破損した storageState で newContext が投げる場合も、セッションの問題として区別して停止する。
-    const context = await browser
-      .newContext({ storageState: toStorageState(sessionState) })
-      .catch(() => null)
-    if (context === null) {
-      return blocked(browser, 'SESSION_INVALID')
-    }
-
-    const page = await context.newPage()
-    page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS)
-
-    // ダイアログは自動で承認しない（fail closed）。出現したら閉じるだけにする。
-    page.on('dialog', (dialog) => {
-      void dialog.dismiss().catch(() => undefined)
-    })
-
-    // 手動更新と同じ導線: 口座一覧ページを開く。
-    await page.goto(ME_ACCOUNTS_URL, { waitUntil: 'domcontentloaded' })
-    const authAfterLoad = await checkAuthentication(page)
-    if (authAfterLoad !== 'OK') {
-      return blocked(browser, authAfterLoad)
-    }
-
-    // 一括更新コントロールの特定: ページ全体から探す（0 件・複数件は停止）。
-    const bulkControl = await resolveTarget(page, BULK_UPDATE_CONTROL_STRATEGIES)
-    if (bulkControl.status !== 'RESOLVED') {
-      return blocked(browser, bulkControl.status)
-    }
-
-    // 更新対象の口座行（「更新」コントロールを含む行）を列挙する。
-    const accountRows = await collectAccountRows(page)
-    if (accountRows === null) {
-      return blocked(browser, 'TARGET_NOT_FOUND')
-    }
-
-    return {
-      status: 'READY',
-      prepared: { browser, page, bulkControl: bulkControl.locator, accountRows },
-    }
-  } catch (error) {
-    await browser.close().catch(() => undefined)
-    throw error
+  const authAfterLoad = await checkAuthentication(page, timeouts)
+  if (authAfterLoad !== 'OK') {
+    return { status: 'BLOCKED', reason: authAfterLoad }
   }
+
+  // 一括更新コントロールの特定: ページ全体から探す（0 件・複数件は停止）。
+  const bulkControl = await resolveBulkUpdateControl(page, timeouts)
+  if (bulkControl.status !== 'RESOLVED') {
+    return { status: 'BLOCKED', reason: bulkControl.status }
+  }
+
+  // 更新対象の口座行（「更新」コントロールを含む行）を列挙する。
+  const accountRows = await collectAccountRows(page, timeouts)
+  if (accountRows === null) {
+    return { status: 'BLOCKED', reason: 'TARGET_NOT_FOUND' }
+  }
+
+  return { status: 'READY', prepared: { page, bulkControl: bulkControl.locator, accountRows } }
 }

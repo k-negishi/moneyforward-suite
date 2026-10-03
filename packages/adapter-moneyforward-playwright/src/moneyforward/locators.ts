@@ -25,20 +25,40 @@ export const ME_ACCOUNTS_URL = 'https://moneyforward.com/accounts'
  */
 export const ROW_UPDATE_CONTROL_NAME_PATTERN = /^更新$/
 
-/** ページ遷移のタイムアウト（ミリ秒）。 */
-export const NAVIGATION_TIMEOUT_MS = 30_000
-
-/** 対象要素の出現待ちのタイムアウト（ミリ秒）。 */
-export const TARGET_WAIT_TIMEOUT_MS = 10_000
-
 /**
- * 一括更新のクリック後、行の変化（受付）を待つ最大時間（ミリ秒）。
- * MF は混雑時に更新を後で処理することがあり、受付の表示が遅れるため長めに取る。
+ * ページ操作のタイムアウト（ミリ秒）。
+ * 呼び出し側が部分指定で上書きできるようにし、テストは実時間を待たずに短縮できる。
  */
-export const ROW_CHANGE_TIMEOUT_MS = 180_000
+export interface RefreshTimeouts {
+  /** ページ遷移・既定のナビゲーションのタイムアウト。 */
+  readonly navigationMs: number
+  /** 対象要素の出現待ち・クリックのタイムアウト。 */
+  readonly targetWaitMs: number
+  /**
+   * 一括更新のクリック後、行の変化（受付）を待つ最大時間。
+   * MF は混雑時に更新を後で処理することがあり、受付の表示が遅れるため長めに取る。
+   */
+  readonly rowChangeMs: number
+  /** 更新操作後に状態を読み直す間隔。 */
+  readonly pollIntervalMs: number
+  /** クリック前の比較基準を確定するための 2 回観測の間隔（自然変動する行の検出に使う）。 */
+  readonly snapshotIntervalMs: number
+}
 
-/** 更新操作後に状態を読み直す間隔（ミリ秒）。 */
-export const REFRESH_POLL_INTERVAL_MS = 1000
+/** 既定のタイムアウト。 */
+export const DEFAULT_REFRESH_TIMEOUTS: RefreshTimeouts = {
+  navigationMs: 30_000,
+  targetWaitMs: 10_000,
+  rowChangeMs: 180_000,
+  pollIntervalMs: 1000,
+  snapshotIntervalMs: 200,
+}
+
+/** 部分指定を既定へ重ねてタイムアウトを確定する（純関数）。 */
+export const resolveTimeouts = (overrides?: Partial<RefreshTimeouts>): RefreshTimeouts => ({
+  ...DEFAULT_REFRESH_TIMEOUTS,
+  ...overrides,
+})
 
 /** Locator の探索起点。Page 全体と、行の内側の両方で同じ探索を使う。 */
 export type LocatorRoot = Pick<Page, 'getByRole' | 'getByText' | 'locator'>
