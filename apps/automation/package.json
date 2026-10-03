@@ -12,7 +12,8 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -p tsconfig.check.json",
-    "test": "vitest run --config ../../vitest.config.ts --project @mf-suite/automation"
+    "test": "vitest run --config ../../vitest.config.ts --project @mf-suite/automation",
+    "refresh-accounts": "pnpm build && node dist/cli/refresh-accounts.js"
   },
   "dependencies": {
     "@mf-suite/adapter-aws": "workspace:*",

@@ -14,6 +14,7 @@
     "format": "biome check --write .",
     "test": "vitest run",
     "test:architecture": "vitest run --project repo-policy --passWithNoTests=false architecture",
+    "refresh-accounts": "pnpm -C apps/automation refresh-accounts",
     "clean": "tsc -b --clean && rm -rf apps/*/dist packages/*/dist"
   },
   "devDependencies": {

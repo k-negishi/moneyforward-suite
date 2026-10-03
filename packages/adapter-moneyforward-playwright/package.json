@@ -14,9 +14,7 @@
     "typecheck": "tsc -p tsconfig.check.json",
     "test": "vitest run --config ../../vitest.config.ts --project @mf-suite/adapter-moneyforward-playwright",
     "session:login": "pnpm build && node dist/cli/session-login.js",
-    "session:check": "pnpm build && node dist/cli/session-check.js",
-    "spike:login": "pnpm build && node dist/spike/login.js",
-    "spike:refresh": "pnpm build && node dist/spike/refresh.js"
+    "session:check": "pnpm build && node dist/cli/session-check.js"
   },
   "dependencies": {
     "@mf-suite/core": "workspace:*",
