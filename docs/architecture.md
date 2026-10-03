@@ -39,3 +39,11 @@ Driving Adapter → Input Port → Application Core → Output Port → Driven A
 
 - **apps/automation**: 現在の唯一の Application。MoneyForward 系の軽量な Automation Job を集約し、初期 Runtime は AWS Lambda Container。Single Lambda + Job Router（ADR-0009）で Job（初期は refresh-accounts）を実行する。
 - 将来の **apps/paypay-worker**（EC2 等）・**apps/web** は独立した Application とし、Runtime・Deployment・IAM・Secret を Application 単位で分離する（ADR-0004・ADR-0013・ADR-0014）。
+
+## Secret アクセスと IAM
+
+Secret は Application ごとに分離し、不要な相互アクセスを許可しない（ADR-0013）。IAM Role も Application 単位で分離し、Least Privilege を適用する（ADR-0014）。
+
+- 取得に必要な権限は `secretsmanager:GetSecretValue` のみとし、`Resource` は対象 Secret の ARN に限定する（ワイルドカード・一覧取得・書き込み権限は与えない）。
+- Secret の識別子（名前・ARN）は設定から注入し、コードへ固定しない。取得した値はログ・エラーへ出さない（ADR-0016）。
+- 取得の失敗は分類して返し、欠如（SECRET_NOT_FOUND）・形式不正・構成不備（SECRET_INVALID）・権限不足（ACCESS_DENIED）は再試行せず、一時障害（TEMPORARY_FAILURE）だけを再試行の対象にする（ADR-0021・ADR-0033）。

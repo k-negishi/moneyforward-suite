@@ -53,7 +53,7 @@ pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:refresh --execute 
 - `packages/core`（`@mf-suite/core`）— Domain / Application / Ports。Framework / Runtime 非依存
 - `packages/security`（`@mf-suite/security`）— allow-list ロガー・認証セッション管理
 - `packages/adapter-moneyforward-playwright`（`@mf-suite/adapter-moneyforward-playwright`）— MoneyForwardPort の Playwright 実装
-- `packages/adapter-aws`（`@mf-suite/adapter-aws`）— SecretStorePort の AWS 実装（PoC 後）
+- `packages/adapter-aws`（`@mf-suite/adapter-aws`）— SecretStorePort の AWS Secrets Manager 実装（最小 IAM 権限の要件は [docs/architecture.md](docs/architecture.md) を参照）
 
 将来用の空 Application・未使用 package は作らない（[ADR-0005](docs/adr/0005-pnpm-workspace.md)）。
 
