@@ -37,5 +37,5 @@ Driving Adapter → Input Port → Application Core → Output Port → Driven A
 
 ## Application と Runtime
 
-- **apps/automation**: 現在の唯一の Application。MoneyForward 系の軽量な Automation Job を集約し、初期 Runtime は AWS Lambda Container。Single Lambda + Job Router（ADR-0009）で Job（初期は refresh-suica）を実行する。
+- **apps/automation**: 現在の唯一の Application。MoneyForward 系の軽量な Automation Job を集約し、初期 Runtime は AWS Lambda Container。Single Lambda + Job Router（ADR-0009）で Job（初期は refresh-accounts）を実行する。
 - 将来の **apps/paypay-worker**（EC2 等）・**apps/web** は独立した Application とし、Runtime・Deployment・IAM・Secret を Application 単位で分離する（ADR-0004・ADR-0013・ADR-0014）。

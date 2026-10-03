@@ -6,35 +6,29 @@
 
 `MoneyForward Suite` は、MoneyForward ME を中心とした個人向け自動化処理を集約するシステムである。MoneyForward ME に関連する複数の自動化機能を、同一 GitHub Repository で継続的に管理する。
 
-最初の実装対象は `refresh-suica` とする。将来的には MoneyForward ME の各種操作・PayPay 自動取り込み・Dashboard へ広げる可能性があるが、将来機能の具体的な実装方式は必要になった時点で設計する。
+最初の実装対象は `refresh-accounts` とする。初期 Job は金融機関のデータ一括更新（モバイル Suica は対象外）とする。将来的には MoneyForward ME の各種操作・PayPay 自動取り込み・Dashboard へ広げる可能性があるが、将来機能の具体的な実装方式は必要になった時点で設計する。
 
 System of Record は MoneyForward ME とする。
 
-## 初期 Job: refresh-suica
+## 初期 Job: refresh-accounts
 
-目的は、MoneyForward ME に連携されたモバイル Suica について、ユーザーが Web 版 MoneyForward ME 上で手動実行している更新操作を自動化することである。処理概要は次のとおり。
+目的は、ユーザーが Web 版 MoneyForward ME 上で手動実行している金融機関のデータ一括更新を自動化することである。処理概要は次のとおり。
 
 ```text
 MoneyForward MEへアクセス
         ↓
 認証状態確認
         ↓
-モバイルSuicaを特定
+金融機関のデータ一括更新
         ↓
-状態取得
-        ↓
-更新可否判断
-        ↓
-必要な場合のみ更新
-        ↓
-更新結果確認
+更新結果確認（行の変化）
 ```
 
-認証は手動ログインとセッション再利用で行う（ADR-0012）。成功判定は状態変化で行い（ADR-0020）、必要な場合のみ更新する。
+認証は手動ログインとセッション再利用で行う（ADR-0012）。成功判定は状態変化で行う（ADR-0020）。一括更新の受付・結果確認は、各金融機関の行の変化を基準に行う。認証要求（セッション失効）を検知した場合は処理を停止する。一括更新が部分的に失敗した場合（一部の金融機関のみ失敗）は、結果を合成して部分成功として表現する。初期 Job の名前とスコープ、部分失敗の扱いの詳細は ADR-0029 を参照。
 
 ## 定期実行
 
-`refresh-suica` は 1 日 1 回実行する。初期設定として早朝帯（例: 05:00 JST）を想定し、実行時刻は設定可能とする。
+`refresh-accounts` は 1 日 1 回実行する。初期設定として早朝帯（例: 05:00 JST）を想定し、実行時刻は設定可能とする。
 
 実行基盤は EventBridge Scheduler → Step Functions → Automation Lambda とし、Retry（初回込み最大 3 試行・1 時間間隔）の待機は Step Functions が担当する。詳細は ADR-0021（Retry と実行基盤）を参照。
 
@@ -45,7 +39,7 @@ MoneyForward MEへアクセス
 ```text
 apps/automation
 
-refresh-suica
+refresh-accounts
 
 MoneyForward Port
 
@@ -69,7 +63,7 @@ Phase 1:
 4. MoneyForward Playwright Adapter
 5. Manual Authentication
 6. Session Reuse
-7. RefreshSuica Use Case
+7. RefreshAccounts Use Case
 8. Job Router
 9. CLI Driving Adapter
 10. Unit Test
