@@ -6,7 +6,7 @@ import type {
   LoggerPort,
   LogStatus,
 } from '@mf-suite/core'
-import { isErrorCode } from '@mf-suite/core'
+import { isErrorCode, isLogJob, isLogStatus } from '@mf-suite/core'
 
 /**
  * Allow List 方式の構造化ロガー。出力できる field を
@@ -16,8 +16,9 @@ import { isErrorCode } from '@mf-suite/core'
  * Allow List は型（core の LogEvent）と実行時の二重で守る。実行時は許可 field を 1 つずつ
  * 明示的に取り出して出力オブジェクトを組むため、イベントに混ぜられた未知の key は出力へ
  * 現れない（スプレッド・JSON.stringify(event) のような丸ごと直列化はしない）。
- * errorCode は core の語彙で実行時に検証し、語彙外の値は UNKNOWN へ丸める
- * （core の正規化方針と一致させる）。
+ * 値も field ごとに core の語彙・型で検証し、違反したイベントは（値の切り落としではなく）
+ * 丸ごと出力しない（Fail Closed）。errorCode だけは非対称に、語彙外の値を UNKNOWN へ
+ * 丸めて出力する（core の正規化方針と一致させる）。
  */
 
 /** ログ 1 行分の出力。Allow List の field と、ロガーが付与する timestamp だけを持つ。 */
@@ -55,43 +56,66 @@ const writeJsonLineToStdout: LogSink = (jsonLine) => {
 }
 
 /**
- * errorCode を語彙で検証する。語彙外の値（キャストで混入した未知の値）は
+ * errorCode を語彙で検証する。語彙外の値（キャストで混入した未知の値・文字列以外）は
  * UNKNOWN へ丸め、生の値が出力へ流れる経路を断つ（core の正規化方針と一致）。
+ * 未指定（undefined）だけは「key なし」として区別する。
  */
-const normalizeErrorCode = (value: ErrorCode | undefined): ErrorCode | undefined => {
+const normalizeErrorCode = (value: unknown): ErrorCode | undefined => {
   if (value === undefined) return undefined
   return isErrorCode(value) ? value : 'UNKNOWN'
 }
 
+/** attempt の検証: 1 以上の整数。オブジェクト・NaN・Infinity・小数・文字列を弾く。 */
+const isPositiveInteger = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 1
+
+/** durationMs の検証: 0 以上の整数。弾く対象は isPositiveInteger と同じ。 */
+const isNonNegativeInteger = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0
+
 /**
  * イベントから出力オブジェクトを組む。許可 field を 1 つずつ取り出し、
  * 成功時（errorCode なし）は errorCode の key 自体を作らない。
+ *
+ * field ごとに値を実行時検証し、1 つでも違反したら null を返す（呼び出し側は出力しない）。
+ * 型で守れない経路（キャスト・JS からの利用）で job / status に語彙外の自由文字列が混入しても、
+ * attempt / durationMs にオブジェクト（toJSON 持ちを含む）や非整数が混入しても、
+ * 生の値が出力へ流れる経路を断つ（Fail Closed。errorCode の丸めだけが意図的な非対称）。
  */
 const toRecord = (
   application: LogApplication,
-  event: LogEvent,
+  event: unknown,
   timestamp: string,
-): StructuredLogRecord => {
-  const errorCode = normalizeErrorCode(event.errorCode)
+): StructuredLogRecord | null => {
+  if (typeof event !== 'object' || event === null) return null
+
+  const fields = event as Record<string, unknown>
+  if (fields.application !== application) return null
+  if (!isLogJob(fields.job)) return null
+  if (!isLogStatus(fields.status)) return null
+  if (!isPositiveInteger(fields.attempt)) return null
+  if (!isNonNegativeInteger(fields.durationMs)) return null
+
+  const errorCode = normalizeErrorCode(fields.errorCode)
 
   if (errorCode === undefined) {
     return {
       timestamp,
       application,
-      job: event.job,
-      status: event.status,
-      attempt: event.attempt,
-      durationMs: event.durationMs,
+      job: fields.job,
+      status: fields.status,
+      attempt: fields.attempt,
+      durationMs: fields.durationMs,
     }
   }
 
   return {
     timestamp,
     application,
-    job: event.job,
-    status: event.status,
-    attempt: event.attempt,
-    durationMs: event.durationMs,
+    job: fields.job,
+    status: fields.status,
+    attempt: fields.attempt,
+    durationMs: fields.durationMs,
     errorCode,
   }
 }
@@ -105,9 +129,10 @@ export const createStructuredLogger = (options: StructuredLoggerOptions): Logger
 
   return {
     log(event: LogEvent): void {
-      if (event.application !== options.application) return
+      const record = toRecord(options.application, event, new Date().toISOString())
+      if (record === null) return
 
-      sink(JSON.stringify(toRecord(options.application, event, new Date().toISOString())))
+      sink(JSON.stringify(record))
     },
   }
 }

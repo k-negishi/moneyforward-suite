@@ -197,6 +197,64 @@ describe('敵対的入力への防御（実行時の allow list）', () => {
   })
 })
 
+describe('値の実行時検証（fail closed）', () => {
+  /** 値を検証できない（語彙外・型違い・欠落）イベントの表。 */
+  const invalidEvents: Array<[string, unknown]> = [
+    ['job が語彙外の自由文字列（キャスト混入）', { ...baseEvent, job: 'LEAKED_FREE_STRING' }],
+    ['job が数値', { ...baseEvent, job: 1 }],
+    ['status が語彙外の自由文字列（キャスト混入）', { ...baseEvent, status: 'LEAKED_FREE_STRING' }],
+    [
+      'status が欠落',
+      { application: 'automation', job: 'refresh-accounts', attempt: 1, durationMs: 1 },
+    ],
+    [
+      'attempt が toJSON を持つオブジェクト',
+      { ...baseEvent, attempt: { toJSON: () => 'LEAKED_FREE_STRING' } },
+    ],
+    ['attempt が 0', { ...baseEvent, attempt: 0 }],
+    ['attempt が小数', { ...baseEvent, attempt: 1.5 }],
+    ['attempt が文字列', { ...baseEvent, attempt: '1' }],
+    ['durationMs が NaN', { ...baseEvent, durationMs: Number.NaN }],
+    ['durationMs が Infinity', { ...baseEvent, durationMs: Number.POSITIVE_INFINITY }],
+    ['durationMs が負数', { ...baseEvent, durationMs: -1 }],
+    ['durationMs が文字列', { ...baseEvent, durationMs: '12' }],
+  ]
+
+  it.each(invalidEvents)('%s のイベントは出力しない', (_label, event) => {
+    const capturing = createCapturingSink()
+    const logger = createStructuredLogger({ application: 'automation', sink: capturing.sink })
+
+    logger.log(event as LogEvent)
+
+    expect(capturing.lines).toEqual([])
+  })
+
+  it('null・undefined・非オブジェクトを渡しても出力しない', () => {
+    const capturing = createCapturingSink()
+    const logger = createStructuredLogger({ application: 'automation', sink: capturing.sink })
+    const logUnknown = logger.log as unknown as (event: unknown) => void
+
+    logUnknown(null)
+    logUnknown(undefined)
+    logUnknown('LEAKED_FREE_STRING')
+    logUnknown(['automation'])
+
+    expect(capturing.lines).toEqual([])
+  })
+
+  it('値の検証を通ったイベントは従来どおり出力される（過剰な遮断がないこと）', () => {
+    const capturing = createCapturingSink()
+    const logger = createStructuredLogger({ application: 'automation', sink: capturing.sink })
+
+    logger.log({ ...baseEvent, status: 'PARTIAL_SUCCESS', attempt: 3, durationMs: 0 })
+
+    const record = parseSingleLine(capturing.lines)
+    expect(record.status).toBe('PARTIAL_SUCCESS')
+    expect(record.attempt).toBe(3)
+    expect(record.durationMs).toBe(0)
+  })
+})
+
 describe('既定 sink（stdout）', () => {
   it('sink を省略すると 1 イベントを改行付き 1 行の JSON で stdout へ書く', () => {
     const originalWrite = process.stdout.write

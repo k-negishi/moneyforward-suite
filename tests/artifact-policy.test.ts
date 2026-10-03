@@ -8,8 +8,13 @@ import { describe, expect, it } from 'vitest'
  * Playwright Artifact（Screenshot / HTML / DOM Dump / HAR / Trace / Video）の非保存を、
  * ソースに有効化設定が存在しないことで検査する（ADR-0017）。
  * 実行時の抑止（launch / context の options builder とそのテスト）も必要で、
- * この静的な検査はその二重防御の 1 層。検出できるのはソース中の直接の記述だけで、
- * 変数へ組み立てて渡す場合やラッパー越しの設定までは防げない（それらはレビューで補う）。
+ * この静的な検査はその二重防御の 1 層。
+ *
+ * 検出するのはソース中の直接の記述（object option とその引用キー、tracing.start /
+ * screenshot 呼び出し、tracesDir 指定）だけ。変数へ組み立てて渡す場合、プロパティ代入
+ * （`options.trace = 'on'`）、ラッパー越しの設定、将来 `playwright.config.*` へ集約する形は
+ * 検出対象外（等価な書き方を網羅できないため、出現した時点で走査対象とパターンの追加を
+ * 検討し、それまではレビューで補う）。
  */
 
 /** リポジトリのルート。cwd に依存せず、このテストファイルの位置（tests/）から解決する。 */
@@ -112,36 +117,94 @@ const readStringLiteral = (line: string, start: number): string | null => {
   return closed ? line.slice(start + 1, end - 1) : line.slice(start + 1)
 }
 
-interface LineScanResult {
-  readonly enablingOptionCount: number
-  readonly inBlockComment: boolean
-  readonly inTemplate: boolean
+/** 位置 start 以降の次の非空白文字を返す（行末なら空文字）。 */
+const nextCodeChar = (line: string, start: number): string => line[skipSpaces(line, start)] ?? ''
+
+/**
+ * `tracing.start(`（プロパティアクセスと空白を許容）の並びかを判定する。
+ * tracing の開始呼び出しは Trace 保存の有効化意図として扱う。
+ */
+const isTracingStartCall = (line: string, start: number): boolean => {
+  const dot = skipSpaces(line, start)
+  if (line[dot] !== '.') return false
+
+  const nameStart = skipSpaces(line, dot + 1)
+  if (!isIdentifierStart(line[nameStart] ?? '')) return false
+
+  let end = nameStart + 1
+  while (end < line.length && isIdentifierPart(line[end] as string)) end += 1
+  if (line.slice(nameStart, end) !== 'start') return false
+
+  return nextCodeChar(line, end) === '('
 }
 
 /**
- * 1 行を走査し、Artifact 保存を有効化するオプション指定の数を返す。
+ * オブジェクトリテラルのキー位置か（直前までに読んだコード文字が `{` か `,`）。
+ * 三項演算子（`cond ? 'trace' : 'video'`）や case ラベル（`case 'trace':`）の
+ * 文字列を引用キーと誤認しないための条件。
+ */
+const isObjectKeyPosition = (lastCodeChar: string): boolean =>
+  lastCodeChar === '{' || lastCodeChar === ','
+
+/** 行をまたいで持ち越す走査状態。 */
+interface ScanCarryState {
+  readonly inBlockComment: boolean
+  readonly inTemplate: boolean
+  /**
+   * 直前までに読んだコード上の文字（空白とコメントは飛ばし、文字列・テンプレートは
+   * 終端の引用符）。引用キー（`{ 'trace': ... }`）の位置判定に使う。
+   */
+  readonly lastCodeChar: string
+}
+
+const initialScanCarryState: ScanCarryState = {
+  inBlockComment: false,
+  inTemplate: false,
+  lastCodeChar: '',
+}
+
+interface LineScanResult {
+  readonly enablingOptionCount: number
+  readonly state: ScanCarryState
+}
+
+/**
+ * 1 行を走査し、Artifact 保存を有効化する指定の数を返す。
  * コメント（行・ブロック）と文字列リテラルの中身はコードとして解釈しない
  * （コメント内の言及を誤検出しない）。ブロックコメントと複数行テンプレートは行をまたぐため、
  * 状態を持ち越す。制限: テンプレートリテラルの補間の中身は文字列として扱う（検出しない）。
  */
-const scanLine = (line: string, inBlockComment: boolean, inTemplate: boolean): LineScanResult => {
+const scanLine = (line: string, initial: ScanCarryState): LineScanResult => {
   let i = 0
   let count = 0
-  let block = inBlockComment
-  let template = inTemplate
+  let block = initial.inBlockComment
+  let template = initial.inTemplate
+  let lastCodeChar = initial.lastCodeChar
+
+  const result = (): LineScanResult => ({
+    enablingOptionCount: count,
+    state: { inBlockComment: block, inTemplate: template, lastCodeChar },
+  })
 
   while (i < line.length) {
     if (template) {
       const end = findTemplateEnd(line, i)
-      if (end === -1) return { enablingOptionCount: count, inBlockComment: block, inTemplate: true }
+      if (end === -1) {
+        template = true
+        return result()
+      }
       template = false
+      lastCodeChar = '`'
       i = end
       continue
     }
 
     if (block) {
       const end = line.indexOf('*/', i)
-      if (end === -1) return { enablingOptionCount: count, inBlockComment: true, inTemplate: false }
+      if (end === -1) {
+        block = true
+        return result()
+      }
       block = false
       i = end + 2
       continue
@@ -156,12 +219,29 @@ const scanLine = (line: string, inBlockComment: boolean, inTemplate: boolean): L
     if (ch === '/' && line[i + 1] === '/') break // 行コメント（行末まで）
     if (ch === '`') {
       const end = findTemplateEnd(line, i + 1)
-      if (end === -1) return { enablingOptionCount: count, inBlockComment: false, inTemplate: true }
+      if (end === -1) {
+        template = true
+        return result()
+      }
+      lastCodeChar = '`'
       i = end
       continue
     }
     if (ch === '"' || ch === "'") {
-      i = skipStringLiteral(line, i)
+      const end = skipStringLiteral(line, i)
+      const literal = readStringLiteral(line, i)
+      // 引用キー（{ 'trace': 'on' } / { "trace": 'on' }）の検出。値の扱いは識別子キーと同じ
+      // （'off' の明示があるときだけ無効とみなす）。
+      if (literal !== null && isObjectKeyPosition(lastCodeChar) && optionNames.has(literal)) {
+        const colon = skipSpaces(line, end)
+        if (line[colon] === ':') {
+          const valueStart = skipSpaces(line, colon + 1)
+          const valueLiteral = readStringLiteral(line, valueStart)
+          if (!(toggleOptionNames.has(literal) && valueLiteral === 'off')) count += 1
+        }
+      }
+      lastCodeChar = ch
+      i = end
       continue
     }
 
@@ -182,19 +262,28 @@ const scanLine = (line: string, inBlockComment: boolean, inTemplate: boolean): L
         }
       }
 
+      // options を経ない直接 API 形の検出（保存を有効化する呼び出し・設定）。
+      if (name === 'tracing' && isTracingStartCall(line, end)) count += 1
+      else if (name === 'screenshot' && lastCodeChar === '.' && nextCodeChar(line, end) === '(') {
+        count += 1
+      } else if (name === 'tracesDir') count += 1
+
+      lastCodeChar = name
       i = end
       continue
     }
 
+    // 空白は「直前のコード文字」ではないため、キー位置の判定用には記録しない。
+    if (ch !== ' ' && ch !== '\t') lastCodeChar = ch
     i += 1
   }
 
-  return { enablingOptionCount: count, inBlockComment: block, inTemplate: template }
+  return result()
 }
 
 /** 行が有効化設定（コード部分）に一致するか。回帰防止の表から直接呼ぶ。 */
 const isEnablingLine = (line: string): boolean =>
-  scanLine(line, false, false).enablingOptionCount > 0
+  scanLine(line, initialScanCarryState).enablingOptionCount > 0
 
 interface Violation {
   readonly path: string
@@ -207,13 +296,11 @@ const collectViolations = (filePaths: readonly string[]): Violation[] => {
 
   for (const relativePath of filePaths) {
     const lines = readFileSync(join(repoRoot, relativePath), 'utf8').split(/\r?\n/)
-    let inBlockComment = false
-    let inTemplate = false
+    let state = initialScanCarryState
 
     lines.forEach((line, index) => {
-      const result = scanLine(line, inBlockComment, inTemplate)
-      inBlockComment = result.inBlockComment
-      inTemplate = result.inTemplate
+      const result = scanLine(line, state)
+      state = result.state
       if (result.enablingOptionCount > 0) violations.push({ path: relativePath, line: index + 1 })
     })
   }
@@ -235,9 +322,23 @@ const formatViolationReport = (violations: readonly Violation[]): string =>
 
 describe('Playwright Artifact の非保存（ソースの静的検査）', () => {
   it('adapter と apps のソースに Artifact 保存を有効化する設定が無い', () => {
-    const targets = targetSourceDirectories().flatMap(collectSourceFiles)
+    const targetsByDirectory = targetSourceDirectories().map((directory) => ({
+      directory,
+      files: collectSourceFiles(directory),
+    }))
 
-    // 列挙の配線が壊れて対象 0 件になっても成功してしまう事故を防ぐ。
+    // 各対象ディレクトリが存在し、ソースを 1 件以上持つことを確かめる。改名・移動で
+    // 走査範囲が黙って狭まり、検査が素通りする事故を防ぐ（対象を移した場合は
+    // targetSourceDirectories の列挙も更新する）。
+    for (const { directory, files } of targetsByDirectory) {
+      expect(
+        existsSync(join(repoRoot, directory)),
+        `検査対象ディレクトリが存在しません（改名・移動の場合は列挙を更新してください）: ${directory}`,
+      ).toBe(true)
+      expect(files.length, `検査対象のソースが 0 件です: ${directory}`).toBeGreaterThan(0)
+    }
+
+    const targets = targetsByDirectory.flatMap((entry) => entry.files)
     expect(targets.length, '検査対象が 0 件です（列挙の配線を確認してください）').toBeGreaterThan(0)
 
     const violations = collectViolations(targets)
@@ -261,6 +362,13 @@ describe('有効化設定の検出パターン（誤検出・検出漏れの回�
     ['const options = { video: `on` }', true], // テンプレートリテラル
     ['const options = { recordHar: harOptions }', true],
     ['const options = { screenshot:true }', true], // 空白なし
+    [`const options = { 'trace': 'on' }`, true], // 引用キー（単一引用符）
+    [`const options = { "video": 'on' }`, true], // 引用キー（二重引用符）
+    [`const options = { 'screenshot': 'only-on-failure' }`, true], // 引用キー + 保存系の値
+    [`const options = { 'recordHar': { path: 'session.har' } }`, true],
+    ['const options = { tracesDir: tracesPath }', true], // Trace の配置先指定
+    ['await context.tracing.start({ screenshots: true, snapshots: true })', true], // 直接 API 形
+    ['await page.screenshot({ path: shotPath })', true], // 直接 API 形
     // 検出しない（明示的な無効化・コメント・文字列・無関係な識別子）
     [`await browser.newContext({ trace: 'off' })`, false],
     [`await browser.newContext({ video: 'off' })`, false],
@@ -273,6 +381,16 @@ describe('有効化設定の検出パターン（誤検出・検出漏れの回�
     ['const options = { traceable: true, videoCount: 0 }', false], // 識別子の部分一致
     ['const trace = createTrace()', false], // オプション指定ではない
     [`const options = {} // trace: 'on' にはしない`, false], // 行末コメント
+    [`const options = { 'trace': 'off' }`, false], // 引用キー + 明示的な無効化
+    ['const kind = flag ? "trace" : "video"', false], // 三項演算子の文字列
+    [`switch (key) { case 'trace': break }`, false], // case ラベル
+    ['const key = "trace"', false], // 代入された文字列
+    ['const screenshot = await capture()', false], // ローカル変数（プロパティ呼び出しでない）
+    ['const tracing = createTracing()', false], // start 呼び出しでない
+    ['const tracesDirectory = tracesPath', false], // 識別子の部分一致
+    ["const note = 'tracesDir は使わない'", false], // 文字列リテラルの中身
+    ['// context.tracing.start() はしない（方針のメモ）', false], // コメント内の言及
+    ['// page.screenshot() はしない（方針のメモ）', false],
   ]
 
   it.each(cases)('%s → %s', (line, expected) => {
@@ -295,18 +413,36 @@ describe('有効化設定の検出パターン（誤検出・検出漏れの回�
 
     expect(collectViolationsFromLines(lines)).toEqual([4])
   })
+
+  it('複数行に分かれた引用キーと直接 API 形も検出する', () => {
+    const lines = [
+      'const options = {',
+      `  'trace': 'on',`,
+      '  video: `on`,',
+      '}',
+      'await context.tracing.start({ screenshots: true })',
+      'await page.screenshot({ path: shotPath })',
+      'const config = { tracesDir }',
+    ]
+
+    expect(collectViolationsFromLines(lines)).toEqual([2, 3, 5, 6, 7])
+  })
+
+  it('複数行に分かれた三項演算子の文字列は検出しない', () => {
+    const lines = ['const kind =', '  flag', '    ? "trace"', '    : "video"']
+
+    expect(collectViolationsFromLines(lines)).toEqual([])
+  })
 })
 
 /** 行配列を走査し、違反した行番号（1 始まり）を返す（行をまたぐ状態の検証用）。 */
 const collectViolationsFromLines = (lines: readonly string[]): number[] => {
   const violations: number[] = []
-  let inBlockComment = false
-  let inTemplate = false
+  let state = initialScanCarryState
 
   lines.forEach((line, index) => {
-    const result = scanLine(line, inBlockComment, inTemplate)
-    inBlockComment = result.inBlockComment
-    inTemplate = result.inTemplate
+    const result = scanLine(line, state)
+    state = result.state
     if (result.enablingOptionCount > 0) violations.push(index + 1)
   })
 

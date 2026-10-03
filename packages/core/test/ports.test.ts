@@ -1,5 +1,6 @@
-import { expectTypeOf, describe, it } from 'vitest'
+import { expectTypeOf, describe, it, expect } from 'vitest'
 
+import { isLogJob, isLogStatus } from '../src/index.js'
 import type {
   AuthSession,
   LogEvent,
@@ -72,6 +73,35 @@ describe('LoggerPort の型契約', () => {
     // @ts-expect-error message は Allow List にない
     const event: LogEvent = { application: 'automation', job: 'refresh-accounts', status: 'FAILURE', attempt: 1, durationMs: 10, message: 'failed' }
     void event
+  })
+})
+
+describe('ログ語彙の実行時ガード', () => {
+  it('isLogJob は語彙の値だけを受け入れ、型・大文字小文字・空白の揺れを拒否する', () => {
+    expect(isLogJob('refresh-accounts')).toBe(true)
+
+    for (const value of [
+      'REFRESH_ACCOUNTS',
+      'refresh_accounts',
+      'refresh-accounts ',
+      '',
+      1,
+      null,
+      undefined,
+      ['refresh-accounts'],
+    ]) {
+      expect(isLogJob(value), String(value)).toBe(false)
+    }
+  })
+
+  it('isLogStatus は語彙の値だけを受け入れ、errorCode の語彙と混同しない', () => {
+    for (const value of ['STARTED', 'SUCCESS', 'PARTIAL_SUCCESS', 'NO_REFRESH_NEEDED', 'FAILURE']) {
+      expect(isLogStatus(value), value).toBe(true)
+    }
+
+    for (const value of ['started', 'UNKNOWN', 'AUTH_REQUIRED', '', 0, null, undefined]) {
+      expect(isLogStatus(value), String(value)).toBe(false)
+    }
   })
 })
 
