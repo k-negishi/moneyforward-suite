@@ -84,20 +84,26 @@ const forbiddenPatterns: readonly RegExp[] = [
  * 認証セッション・Screenshot・Trace・HAR・Video などの機微な情報を CI の外へ持ち出し得る。
  * 保存が必要な調査はローカルで行い、成果物は git 管理外に置く。
  *
- * 1 つ目は `uses:` に続く保存 Action の参照（大文字小文字は問わない）を検出する。
- * 2 つ目は `uses:` の値が同一行のプレーンスカラーでない記法（`>-` / `|` / コメントのみ /
+ * 1 つ目は `uses` キーに続く保存 Action の参照（大文字小文字は問わない）を検出する。
+ * 2 つ目は `uses` キーの値が同一行のプレーンスカラーでない記法（`>-` / `|` / コメントのみ /
  * 値なし、`!` `&` `*` で始まるタグ・アンカー・エイリアス）を検出する。値や参照が同一行に
  * なくても、デコレーションを挟んでも YAML としては解決され得るため、これを許すと行単位の
- * 検査をすり抜けて保存 Action を参照できてしまう。`uses:` の直後にこれらで始まる正当な
+ * 検査をすり抜けて保存 Action を参照できてしまう。`uses` キーの直後にこれらで始まる正当な
  * Action 参照は存在しない。
+ * 3 つ目は YAML の explicit key（`? uses`）を検出する。値は次行になるため行単位では解決
+ * できないが、キーの行の時点で検出側に倒す。キーを引用符で囲む形（`"uses":` / `'uses':`）は
+ * 1・2 つ目のパターンが引用符を許容することで検出する。
  *
  * 検査は行単位の best-effort。別行で定義したアンカーを参照する間接参照、引用符内の
  * エスケープやインラインデコレーション（`\x61` 等）による難読化、`run:` ステップ内での
- * 送出、別名・ラッパーなど未知の Action は防げない。レビューで補う。
+ * 送出、別名・ラッパーなど未知の Action は防げない。レビューで補う。行単位の文字列一致
+ * では YAML の等価表現を網羅できないため、YAML としてパースして `uses` キーを構造的に
+ * 検査する方式は、この限界を閉じる将来の改善候補（依存追加が必要）。
  */
 const forbiddenWorkflowPatterns: readonly RegExp[] = [
-  /uses\s*:\s*\S*upload-artifact/i,
-  /uses\s*:\s*(?:[>|#&*!]|$)/,
+  /uses["']?\s*:\s*\S*upload-artifact/i,
+  /uses["']?\s*:\s*(?:[>|#&*!]|$)/,
+  /^\s*(?:-\s*)?\?\s*["']?uses["']?\s*$/,
 ]
 
 interface Violation {
@@ -306,6 +312,10 @@ describe('保存 Action の禁止パターン（誤検出・検出漏れの回�
     ['      - uses: !!str |', true], // タグ（!!str）付きの literal スカラー
     ['      - uses: &x >-', true], // アンカー（&x）付きの folded スカラー
     ['      - uses: *ref', true], // エイリアス（別行で定義したアンカーを参照する記法）
+    // 検出する（キーの等価な書き方〈引用キー・explicit key〉も行の時点で止める）
+    ['      - "uses": actions/upload-artifact@v4', true], // 二重引用符のキー
+    ["      - 'uses': >-", true], // 単一引用符のキー + folded スカラー
+    ['      - ? uses', true], // explicit key（値は次行。キーの行で検出する）
     ['        actions/upload-artifact@v4', false], // 値の行だけでは検出しない（上の行で止める）
     // 検出しない（保存以外の Action の参照、保存 Action を指さないコメント・run: 内の文字列）
     ['# upload-artifact による保存は行わない（方針のメモ）', false],
@@ -314,6 +324,8 @@ describe('保存 Action の禁止パターン（誤検出・検出漏れの回�
     ['uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', false],
     // 行末のバージョンコメント（値の後に `#` が来る形）は記法ではない
     ['uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1', false],
+    // 引用キーでも保存 Action 以外は対象外（キー記法の一般化による誤検出がないこと）
+    ['      - "uses": actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', false],
     ['uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', false],
     ['uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413', false],
     ['uses: actions/download-artifact@v7', false],
