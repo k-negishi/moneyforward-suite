@@ -15,7 +15,10 @@
     "test": "vitest run --config ../../vitest.config.ts --project @mf-suite/automation"
   },
   "dependencies": {
-    "@mf-suite/core": "workspace:*"
+    "@mf-suite/adapter-aws": "workspace:*",
+    "@mf-suite/adapter-moneyforward-playwright": "workspace:*",
+    "@mf-suite/core": "workspace:*",
+    "@mf-suite/security": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^5.0.3"

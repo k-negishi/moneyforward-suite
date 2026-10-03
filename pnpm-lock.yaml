@@ -184,9 +184,18 @@ importers:
 
   apps/automation:
     dependencies:
+      '@mf-suite/adapter-aws':
+        specifier: workspace:*
+        version: link:../../packages/adapter-aws
+      '@mf-suite/adapter-moneyforward-playwright':
+        specifier: workspace:*
+        version: link:../../packages/adapter-moneyforward-playwright
       '@mf-suite/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@mf-suite/security':
+        specifier: workspace:*
+        version: link:../../packages/security
     devDependencies:
       vitest:
         specifier: ^5.0.3

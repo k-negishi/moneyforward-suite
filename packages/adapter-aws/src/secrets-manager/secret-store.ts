@@ -38,6 +38,15 @@ export interface AwsSecretsManagerSecretStoreConfig {
 const toSecretValue = (value: string): SecretValue => value as unknown as SecretValue
 
 /**
+ * 論理 Secret ID（opaque）を物理名から作る。ブランドは core の public API から export されないため、
+ * 構成側（Composition Root）が論理 ID を用意するにはキャストが要る。Application ごとに 1 つの
+ * Secret を使う構成では、物理名をそのまま論理 ID として扱う（Store の設定と取得要求で同じ値を
+ * 持ち回り、値の同一性で照合する）。キャストはこの 1 箇所に閉じ込める。
+ */
+// biome-ignore lint/nursery/noUnsafeTypeAssertion: ブランドは core の public API から export されず、opaque な SecretId を構成側で用意するにはこの 1 箇所のキャストが必要（境界を跨ぐ実装をレビューで可視にする）
+export const createSecretId = (secretName: string): SecretId => secretName as unknown as SecretId
+
+/**
  * 例外から分類の判定に使う name だけを読む。message は読まない（自由文字列を Error へ
  * 持ち込まない。message には Secret を含み得るため、Domain Error へ写像しない）。
  */
