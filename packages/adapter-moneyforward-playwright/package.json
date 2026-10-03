@@ -17,6 +17,8 @@
     "spike:refresh": "pnpm build && node dist/spike/refresh.js"
   },
   "dependencies": {
+    "@mf-suite/core": "workspace:*",
+    "@mf-suite/security": "workspace:*",
     "playwright": "^1.63.0"
   }
 }

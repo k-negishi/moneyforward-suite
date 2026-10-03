@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { EXIT_CODE_BY_STATUS, decideBulkStatus, parseRefreshArgs } from '../src/spike/refresh-cli.js'
-import type { SpikeStatus } from '../src/spike/refresh-cli.js'
+import { EXIT_CODE_BY_STATUS, parseRefreshArgs, toSpikeStatus } from '../src/cli/refresh-cli.js'
+import type { SpikeStatus } from '../src/cli/refresh-cli.js'
+import type { RefreshObservation } from '../src/moneyforward/page-client.js'
 
 // CLI の引数と終了コードの契約を固定する（既定の反転・矛盾指定の見逃しを検出する）。
 describe('parseRefreshArgs', () => {
@@ -93,13 +94,46 @@ describe('EXIT_CODE_BY_STATUS', () => {
   })
 })
 
-describe('decideBulkStatus', () => {
+describe('toSpikeStatus', () => {
+  const observation: RefreshObservation = {
+    acceptance: 'ACCEPTED',
+    observedRowCount: 2,
+    changedRowCount: 1,
+    failedRowCount: 0,
+    inProgressAppeared: false,
+    authLost: false,
+  }
+
+  it('AVAILABLE → REFRESH_AVAILABLE（読み取りのみの確認成功）', () => {
+    expect(toSpikeStatus({ status: 'AVAILABLE' })).toBe('REFRESH_AVAILABLE')
+  })
+
+  it('受付が確認できた観測 → REFRESH_ACCEPTED', () => {
+    expect(toSpikeStatus({ status: 'OBSERVED', observation })).toBe('REFRESH_ACCEPTED')
+  })
+
+  it('受付が確認できない観測 → TEMPORARY_FAILURE（fail closed）', () => {
+    expect(
+      toSpikeStatus({
+        status: 'OBSERVED',
+        observation: { ...observation, acceptance: 'NOT_ACCEPTED', changedRowCount: 0 },
+      }),
+    ).toBe('TEMPORARY_FAILURE')
+  })
+
+  it('認証失効の観測 → AUTH_REQUIRED（受付の有無によらない）', () => {
+    expect(
+      toSpikeStatus({ status: 'OBSERVED', observation: { ...observation, authLost: true } }),
+    ).toBe('AUTH_REQUIRED')
+  })
+
   it.each([
-    [true, true, 'REFRESH_ACCEPTED'],
-    [true, false, 'TEMPORARY_FAILURE'],
-    [false, true, 'TEMPORARY_FAILURE'],
-    [false, false, 'TEMPORARY_FAILURE'],
-  ] as const)('clicked=%s accepted=%s → %s', (clicked, accepted, expected) => {
-    expect(decideBulkStatus({ clicked, accepted })).toBe(expected)
+    ['AUTH_REQUIRED'],
+    ['SESSION_INVALID'],
+    ['TARGET_NOT_FOUND'],
+    ['TARGET_AMBIGUOUS'],
+    ['TEMPORARY_FAILURE'],
+  ] as const)('続行できない理由 %s はそのまま写す', (reason) => {
+    expect(toSpikeStatus({ status: reason })).toBe(reason)
   })
 })
