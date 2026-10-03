@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, lstatSync, readFileSync } from 'node:fs'
+import { lstatSync, readFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -147,14 +147,48 @@ const collectTargetFiles = (): string[] =>
       return false
     }
 
-    // 未ステージで削除されたファイル（git の index に残っている）で落ちないよう存在を確認する。
-    if (!existsSync(absolutePath)) {
-      return false
+    // 存在確認と種別判定を 1 回の lstat にまとめる。existsSync による事前確認では、確認から
+    // 読み取りまでの間にファイルが消える隙間（TOCTOU）が残る。未ステージで削除されたファイル
+    // （git の index に残っている）や、列挙の直後に並列実行する他テストが一時ファイル（境界
+    // テストの probe 等）を削除した場合は、ここで除外する。
+    try {
+      // シンボリックリンク（AGENTS.md 等）は実体を二重に検査しないため対象外にする。
+      return !lstatSync(absolutePath).isSymbolicLink()
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        return false
+      }
+      throw error
     }
-
-    // シンボリックリンク（AGENTS.md 等）は実体を二重に検査しないため対象外にする。
-    return !lstatSync(absolutePath).isSymbolicLink()
   })
+
+/**
+ * 読み取り対象のファイルが既に消えている（ENOENT）エラーか。
+ * git の列挙から読み取りまでの間に、並列実行する他テストが一時ファイル（境界テストの
+ * probe 等）を削除すると起こり得る。
+ */
+const isMissingFileError = (error: unknown): boolean => {
+  if (!(error instanceof Error) || !('code' in error)) {
+    return false
+  }
+  return error.code === 'ENOENT'
+}
+
+/**
+ * ファイルを読み取る。列挙後に消えたファイルは読み飛ばして undefined を返す（読み取り対象は
+ * 列挙時点のスナップショットで、一時ファイルの消滅は恒久ファイルの検査を弱めない）。
+ * 消えている以外の読み取り失敗は、これまでどおりテストを失敗させる。
+ */
+const readFileIfPresent = (absolutePath: string): string | undefined => {
+  try {
+    return readFileSync(absolutePath, 'utf8')
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return undefined
+    }
+    throw error
+  }
+}
 
 /** 行分割の改行パターン（CRLF / LF の両方を扱う。行番号を報告に使うため、ここで分割する）。 */
 const LINE_BREAK_PATTERN = /\r?\n/
@@ -176,7 +210,12 @@ const collectViolations = (filePaths: readonly string[]): Violation[] => {
   const violations: Violation[] = []
 
   for (const relativePath of filePaths) {
-    const lines = readFileSync(join(repoRoot, relativePath), 'utf8').split(LINE_BREAK_PATTERN)
+    const contents = readFileIfPresent(join(repoRoot, relativePath))
+    if (contents === undefined) {
+      continue
+    }
+
+    const lines = contents.split(LINE_BREAK_PATTERN)
 
     lines.forEach((line, index) => {
       if (isForbiddenLine(line)) {
@@ -197,7 +236,12 @@ const collectWorkflowViolations = (filePaths: readonly string[]): Violation[] =>
       continue
     }
 
-    const lines = readFileSync(join(repoRoot, relativePath), 'utf8').split(LINE_BREAK_PATTERN)
+    const contents = readFileIfPresent(join(repoRoot, relativePath))
+    if (contents === undefined) {
+      continue
+    }
+
+    const lines = contents.split(LINE_BREAK_PATTERN)
 
     lines.forEach((line, index) => {
       if (isForbiddenWorkflowLine(line)) {
@@ -242,6 +286,12 @@ describe('コメント規約（CLAUDE.md）', () => {
 
     const violations = collectViolations(targets)
     expect(violations, formatViolationReport(violations)).toEqual([])
+  })
+
+  it('列挙の後に消えたファイル（並列実行する他テストの一時ファイル等）は読み飛ばす', () => {
+    // git の列挙後・読み取り前に消えたファイルと同じ条件（読み取り時に存在しない）を作る。
+    // 読み飛ばしても 0 件ガード（collectTargetFiles 側）と恒久ファイルの検査は変わらない。
+    expect(collectViolations(['packages/core/boundary-probe-vanished/sample.ts'])).toEqual([])
   })
 })
 
