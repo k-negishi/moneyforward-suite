@@ -1,6 +1,6 @@
 # 要件とロードマップ
 
-この文書は MoneyForward Suite の要件とロードマップをまとめる生きている文書である。進捗に応じて更新する。決定の理由は [ADR](adr/README.md) に、現在の構造は [architecture.md](architecture.md) にある。
+この文書は MoneyForward Suite の要件とロードマップをまとめる生きている文書である。進捗に応じて更新する。決定の理由は [ADR](adr/README.md) に、現在の構造は [architecture.md](architecture.md) に、決定前の企画は [proposals](proposals/README.md) にある。
 
 ## 概要
 

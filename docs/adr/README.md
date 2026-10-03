@@ -52,3 +52,4 @@
 | [0027](0027-review-subagent-migration.md) | レビュー工程をリポジトリ専用サブエージェント 2 体へ移行する | Proposed | 2026-10-03 |
 | [0028](0028-refresh-accounts-initial-job.md) | 初期 Job を refresh-accounts（金融機関の一括更新と Suica 更新）とする | Superseded by ADR-0029 | 2026-10-03 |
 | [0029](0029-exclude-mobile-suica.md) | モバイル Suica を対象から外し、初期 Job を金融機関のデータ一括更新に限定する | Accepted | 2026-10-03 |
+| [0030](0030-proposal-staging.md) | 企画段階の文書を proposals に置き、決着時に ADR へ蒸留する | Proposed | 2026-10-03 |
