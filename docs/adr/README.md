@@ -49,5 +49,6 @@
 | [0024](0024-iac-per-deployment-unit.md) | Infrastructure as Code を Deployment Unit 単位で管理する | Accepted | 2026-10-03 |
 | [0025](0025-external-system-boundaries.md) | 外部システム境界を Adapter で分離する（MoneyForward と PayPay） | Accepted | 2026-10-03 |
 | [0026](0026-adr-trigger-policy.md) | ADR の作成トリガーを定め、開発フローに組み込む | Accepted | 2026-10-03 |
+| [0027](0027-review-subagent-migration.md) | レビュー工程をリポジトリ専用サブエージェント 2 体へ移行する | Proposed | 2026-10-03 |
 | [0028](0028-refresh-accounts-initial-job.md) | 初期 Job を refresh-accounts（金融機関の一括更新と Suica 更新）とする | Superseded by ADR-0029 | 2026-10-03 |
 | [0029](0029-exclude-mobile-suica.md) | モバイル Suica を対象から外し、初期 Job を金融機関のデータ一括更新に限定する | Accepted | 2026-10-03 |
