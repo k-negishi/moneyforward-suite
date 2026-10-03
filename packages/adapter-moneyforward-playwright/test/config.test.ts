@@ -14,6 +14,7 @@ import {
   containsAuthChallenge,
   formatSessionPathForDisplay,
   isAuthChallengeDetected,
+  isSignInUrl,
   resolveSessionFilePath,
 } from '../src/spike/config.js'
 import type { LocatorRoot } from '../src/spike/config.js'
@@ -143,6 +144,32 @@ describe('AUTH_CHALLENGE_INPUT_SELECTOR', () => {
   it('パスワード入力欄とワンタイムコード入力欄を対象にする', () => {
     expect(AUTH_CHALLENGE_INPUT_SELECTOR).toContain('input[type="password"]')
     expect(AUTH_CHALLENGE_INPUT_SELECTOR).toContain('input[autocomplete="one-time-code"]')
+  })
+})
+
+describe('isSignInUrl', () => {
+  it('sign_in のパスは true', () => {
+    expect(isSignInUrl('https://moneyforward.com/users/sign_in')).toBe(true)
+    expect(isSignInUrl('https://moneyforward.com/sign_in')).toBe(true)
+  })
+
+  it('pathname に signin / login を含む URL も true（fail closed）', () => {
+    expect(isSignInUrl('https://example.invalid/signin')).toBe(true)
+    expect(isSignInUrl('https://example.invalid/login')).toBe(true)
+  })
+
+  it('id ドメイン（ログイン基盤）はパスによらず true', () => {
+    expect(isSignInUrl('https://id.moneyforward.com/')).toBe(true)
+    expect(isSignInUrl('https://id.moneyforward.com/oauth/authorize')).toBe(true)
+  })
+
+  it('通常のパスは false', () => {
+    expect(isSignInUrl('https://moneyforward.com/')).toBe(false)
+    expect(isSignInUrl('https://moneyforward.com/accounts')).toBe(false)
+  })
+
+  it('URL として解釈できない場合は false', () => {
+    expect(isSignInUrl('not-a-url')).toBe(false)
   })
 })
 

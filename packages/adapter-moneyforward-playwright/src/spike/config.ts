@@ -125,10 +125,25 @@ export const AUTH_CHALLENGE_INPUT_SELECTOR = [
   'input[autocomplete="one-time-code"]',
 ].join(', ')
 
-/** ログイン画面の URL かどうか（セッション失効によるリダイレクトの検知に使う）。 */
+/**
+ * ログイン画面の URL かどうか（セッション失効によるリダイレクトの検知に使う）。
+ * 別ドメインのログイン基盤（id ドメイン）や、パスにサインイン系の語を含む URL も
+ * サインイン導線として扱う（見逃すと未認証のまま操作を続けるため、誤検知側へ倒す = fail closed）。
+ * 実機で実際のリダイレクト先を確認して調整する。
+ */
 export const isSignInUrl = (url: string): boolean => {
   try {
-    return new URL(url).pathname.startsWith('/users/sign_in')
+    const parsed = new URL(url)
+    const hostname = parsed.hostname.toLowerCase()
+    const pathname = parsed.pathname.toLowerCase()
+    // id ドメイン（id.moneyforward.com 等）はログイン基盤そのもののため、パスによらずサインイン扱いにする。
+    if (hostname.startsWith('id.')) return true
+    return (
+      pathname.startsWith('/users/sign_in') ||
+      pathname.includes('sign_in') ||
+      pathname.includes('signin') ||
+      pathname.includes('login')
+    )
   } catch {
     return false
   }
