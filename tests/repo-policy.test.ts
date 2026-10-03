@@ -82,12 +82,20 @@ const forbiddenPatterns: readonly RegExp[] = [
 /**
  * `.github/` 配下で参照しない保存 Action。Artifact を GitHub 側へ保存する Action は、
  * 認証セッション・Screenshot・Trace・HAR・Video などの機微な情報を CI の外へ持ち出し得る。
- * `uses:` 行の参照だけを対象にし、大文字小文字は問わない（コメントや `run:` 内の言及は
- * 誤検出しない）。保存が必要な調査はローカルで行い、成果物は git 管理外に置く。
- * この検査は `uses:` 行の参照の抑止にとどまり、`run:` ステップ内での送出や、別名・
- * ラッパーなど未知の Action は防げない。それらはレビューで補う。
+ * 保存が必要な調査はローカルで行い、成果物は git 管理外に置く。
+ *
+ * 1 つ目は `uses:` に続く保存 Action の参照（大文字小文字は問わない）を検出する。
+ * 2 つ目は `uses:` の値が同一行のプレーンスカラーでない記法（`>-` / `|` / コメントのみ /
+ * 値なし）を検出する。値が次行以降にあっても YAML としては解決され得るため、これを許すと
+ * 行単位の検査をすり抜けて保存 Action を参照できてしまう。参照の 1 行表記に正当な用途はない。
+ *
+ * 検査は行単位の best-effort で、YAML アンカー/エイリアス（`uses: *ref`）による間接参照、
+ * `run:` ステップ内での送出、別名・ラッパーなど未知の Action は防げない。レビューで補う。
  */
-const forbiddenWorkflowPatterns: readonly RegExp[] = [/uses\s*:\s*\S*upload-artifact/i]
+const forbiddenWorkflowPatterns: readonly RegExp[] = [
+  /uses\s*:\s*\S*upload-artifact/i,
+  /uses\s*:\s*(?:[>|]|#|$)/,
+]
 
 interface Violation {
   readonly path: string
@@ -287,10 +295,19 @@ describe('保存 Action の禁止パターン（誤検出・検出漏れの回�
     // SHA 固定形式でも repo 名で検出できる（バージョンコメントの有無を問わない）
     ['uses: actions/upload-artifact@7d29b5b9e8b3f46f4f7e8b8e6b9c0b1c2d3e4f50 # v4.6.2', true],
     ['uses: Actions/Upload-Artifact@v7', true], // 大文字表記（大文字小文字は問わない）
-    // 検出しない（保存以外の Action、コメント行、run: 内の文字列）
+    // 検出する（値が同一行のプレーンスカラーでない記法は 1 行目の時点で止め、迂回させない）
+    ['      - uses: >-', true], // folded スカラー。値は次行以降だが、この行だけで検出する
+    ['      - uses: |', true], // literal スカラー
+    ['      - uses:', true], // 値が同一行にない
+    ['      - uses: # 値は次行に書く', true], // コメントのみで値が同一行にない
+    ['        actions/upload-artifact@v4', false], // 値の行だけでは検出しない（上の行で止める）
+    // 検出しない（保存以外の Action の参照、保存 Action を指さないコメント・run: 内の文字列）
     ['# upload-artifact による保存は行わない（方針のメモ）', false],
     ['run: echo "upload-artifact は使わない"', false],
+    ['run: echo "uses: actions/checkout@v7"', false], // run: 内の文字列は複数行記法ではない
     ['uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', false],
+    // 行末のバージョンコメント（値の後に `#` が来る形）は記法ではない
+    ['uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1', false],
     ['uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', false],
     ['uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413', false],
     ['uses: actions/download-artifact@v7', false],
