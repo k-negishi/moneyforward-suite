@@ -48,23 +48,39 @@ const ERROR_CODE_RETRYABLE: Readonly<Record<ErrorCode, boolean>> = {
 /** 語彙の集合。対応表から導出し、二重定義を作らない。 */
 const ERROR_CODES: ReadonlySet<string> = new Set(Object.keys(ERROR_CODE_RETRYABLE))
 
-/** 値が語彙に含まれるか。キャストで混入した未知の値を実行時に弾く。 */
-const isErrorCode = (value: string): value is ErrorCode => ERROR_CODES.has(value)
+/**
+ * 値がエラー分類の語彙に含まれるかを判定する。
+ * Adapter など実行時の境界で、キャスト混入した未知の値を検証するために公開する。
+ */
+export const isErrorCode = (value: unknown): value is ErrorCode =>
+  typeof value === 'string' && ERROR_CODES.has(value)
 
-/** エラー分類が再試行可能かを返す。語彙外の値は false（安全側）。 */
+/**
+ * 語彙外の値を UNKNOWN へ丸める（内部）。
+ * 正規化の規則をこの 1 箇所に固定し、生成と再試行可否の判断を一致させる。
+ */
+const normalizeErrorCode = (value: unknown): ErrorCode => (isErrorCode(value) ? value : 'UNKNOWN')
+
+/** エラー分類が再試行可能かを返す。語彙外の値は UNKNOWN として扱う（再試行可）。 */
 export const isRetryableErrorCode = (code: ErrorCode): boolean =>
-  isErrorCode(code) ? ERROR_CODE_RETRYABLE[code] : false
+  ERROR_CODE_RETRYABLE[normalizeErrorCode(code)]
 
-/** Domain Error。分類（code）だけを持ち、再試行可否は対応表から導出する。 */
+declare const domainErrorBrand: unique symbol
+
+/**
+ * Domain Error。分類（code）だけを持ち、再試行可否は対応表から導出する。
+ * 生成は createDomainError に型で強制する。ブランドは型レベルのみ（ファントム）で、
+ * 実行時の形状は分類だけのまま。
+ */
 export interface DomainError {
   readonly code: ErrorCode
+  readonly [domainErrorBrand]: true
 }
 
 /**
- * エラー分類から Domain Error を作る。
- * キャストで語彙外の値が渡された場合は UNKNOWN へ丸める（fail closed。
- * 生の文字列がログの errorCode として流れる経路を断つ）。
+ * エラー分類から Domain Error を作る（唯一の生成経路）。
+ * 語彙外の値は UNKNOWN へ丸める（fail closed。生の文字列がログの errorCode として
+ * 流れる経路を断つ）。
  */
-export const createDomainError = (code: ErrorCode): DomainError => ({
-  code: isErrorCode(code) ? code : 'UNKNOWN',
-})
+export const createDomainError = (code: ErrorCode): DomainError =>
+  ({ code: normalizeErrorCode(code) }) as DomainError

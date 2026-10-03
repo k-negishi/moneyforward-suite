@@ -4,7 +4,7 @@
 export type { Result } from './result.js'
 
 export type { DomainError, ErrorCode } from './errors.js'
-export { createDomainError, isRetryableErrorCode } from './errors.js'
+export { createDomainError, isErrorCode, isRetryableErrorCode } from './errors.js'
 
 export type {
   ApplicationResult,

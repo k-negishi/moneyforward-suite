@@ -31,7 +31,9 @@ UNKNOWN
 
 再試行可否は分類から一意に決まる対応表（1 箇所の定義）で決める。再試行可能（`retryable = true`）は `TEMPORARY_FAILURE` / `REFRESH_NOT_ACCEPTED` / `UNKNOWN` の 3 つだけとし、他は再試行しない。認証（再ログインというユーザー操作が要る）・Secret（構成の問題）・対象特定（対象が無い・曖昧）・明示的な拒否は、再試行しても回復しないため対象外とする。
 
-Domain Error は分類（`code`）だけを運び、再試行可否は保持しない（`isRetryableErrorCode(code)` で導出する）。保持フィールドにすると `{ code: 'TEMPORARY_FAILURE', retryable: false }` のような不整合な値が構築できるため、対応表を唯一の判断源にする。Domain Error の生成は 1 つの関数に閉じ、実行時に語彙の集合で検証して、キャストで語彙外の値が混入した場合は `UNKNOWN` へ丸める（fail closed。生の文字列がログの `errorCode` として流れる経路を断つ）。
+Domain Error は分類（`code`）だけを運び、再試行可否は保持しない（`isRetryableErrorCode(code)` で導出する）。保持フィールドにすると `{ code: 'TEMPORARY_FAILURE', retryable: false }` のような不整合な値が構築できるため、対応表を唯一の判断源にする。Domain Error は型レベルのブランドを持ち、生成を専用の関数（`createDomainError`）に型で強制する。ブランドはファントム（実行時の形状は分類だけのまま）で、リテラルからの直接構築は型エラーになる。
+
+語彙外の値の扱いは 1 つの正規化規則に統一する。内部の `normalizeErrorCode` が唯一の規則で、生成（`createDomainError`）と再試行可否の判断（`isRetryableErrorCode`）の両方がこれを通る。キャストで混入した語彙外の値は `UNKNOWN`（再試行可）として扱い、生の文字列がログの `errorCode` として流れる経路を断つ（fail closed）。実行時の境界で語彙を検証できるよう `isErrorCode` を公開する（正規化自体は公開しない）。
 
 `REFRESH_REJECTED` と `REFRESH_NOT_ACCEPTED` は分ける。前者は MoneyForward 側が明示的に拒否・失敗した観測（失敗の出現）がある場合で、再試行しない。後者は受付の確認ができなかった（失敗の観測がない）場合で、一時障害の可能性があるため再試行する。一括更新の受付が確認できない場合の呼び分けはこの 2 つで行う。
 
@@ -45,7 +47,7 @@ Application Result は判別 union とし、`errorCode` は `FAILURE` のとき�
 
 - 呼び出し側（Use Case・Job Router・実行基盤）は `DomainError` の分類から `isRetryableErrorCode` で再試行判断を一意にできる（ADR-0021 の「一時障害のみ Retry」に対応）。
 - 対応表が 1 箇所になり、語彙の追加時は `Record<ErrorCode, boolean>` のテストが分類漏れを型検査で検出する。
-- 不整合な Domain Error（分類と再試行可否の食い違い）が型として構築できず、キャスト混入は実行時の正規化で `UNKNOWN` に落ちる。
+- 不整合な Domain Error（分類と再試行可否の食い違い）が構築できない。ブランドにより生成が `createDomainError` に型で強制され、キャスト混入した語彙外の値は実行時の正規化で `UNKNOWN`（再試行可）に落ちる。生成と再試行可否の判断は同じ規則を通るため、同じ値で判断が分かれない。
 - 失敗結果の組み立てが正準の写像に集約され、`errorCode` を付け忘れる・別の分類を手で入れる実装が現れない。
 - `UNKNOWN` を再試行可能にするのは、判定不能（タイムアウト・本文取得失敗等）が一時障害である可能性を許すためである。判定不能を成功と見なさず再試行に回す（fail closed）。
 - `SUCCESS` が受付確認までを指すため、実更新の完了を前提にする呼び出し側の処理（完了待ち・件数確認等）は別途設計が必要になる。
@@ -62,4 +64,6 @@ Application Result は判別 union とし、`errorCode` は `FAILURE` のとき�
 - 再試行可否をエラー生成側（Adapter・Use Case）が個別に指定する: 同じ分類でも実装ごとに可否がぶれ、判断基準が分散するため却下。対応表を 1 箇所に固定する。
 - Domain Error に `retryable` を保持フィールドとして持たせる: 分類と矛盾する値（`TEMPORARY_FAILURE` で `retryable = false`）を構築でき、判断源が 2 つになるため却下。分類から導出する。
 - Application Result を「`status` と optional な `errorCode`」の 1 つの型にする: `SUCCESS` に `errorCode` を付けられる形が残り、「失敗のときだけ分類を持つ」不変条件を型で表せないため却下。判別 union にする。
+- Domain Error をブランドなしの構造的な型（`{ code: ErrorCode }`）にする: リテラルから自由に構築でき、生成経路（語彙の検証・正規化）を通らない値が型検査をすり抜けるため却下。ファントムのブランドで生成を `createDomainError` に強制する。
+- 語彙外の値の正規化を経路ごとに変える（生成は `UNKNOWN`、再試行可否の判断は `false`）: 同じ値で「再試行可」と「再試行不可」の判断が反転し、呼び出し側が誤るため却下。規則を 1 つに統一し、どちらの経路も `UNKNOWN`（再試行可）に揃える。
 - キャストで混入した語彙外の値をそのまま通す: 生の文字列がログの `errorCode` として流れ、Allow List（ADR-0016）を破り得るため却下。実行時に語彙の集合で検証し `UNKNOWN` へ丸める。
