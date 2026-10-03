@@ -24,5 +24,20 @@
       "Read(./.env*)"
     ]
   },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/sync-master-on-start.sh\"",
+            "timeout": 20,
+            "statusMessage": "master を最新化しています"
+          }
+        ]
+      }
+    ]
+  },
   "plansDirectory": ".claude/plans"
 }

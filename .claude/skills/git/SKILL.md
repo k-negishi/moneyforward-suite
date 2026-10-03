@@ -20,6 +20,19 @@ description: このリポジトリの Git 規約と基本手順を定める。�
 - `feat/` は使わない（`feature/` に統一する）。Issue 番号は付けない。
 - `<slug>` は内容を表す英小文字の kebab-case。例: `feature/monorepo-foundation`、`refactor/rename-to-moneyforward-suite`、`chore/bump-pnpm`。
 
+## ブランチの作成
+
+**切る直前に `origin/master` を取得し、そこから切る。** 古い master から切ると、後で PR にしたときに既存の変更と衝突する（ADR の採番が既存と重複する、同じファイルを古い前提で編集する、など）。
+
+```text
+git fetch origin master
+git switch -c <branch> origin/master
+```
+
+セッション開始時（`startup` / `resume`）に `.claude/hooks/sync-master-on-start.sh` が master にいるときだけローカルの master を最新化する。master 以外のブランチや差分があるときは何もしないため、また最新化の後に master が進むこともあるため、切る直前の fetch は省かない。
+
+未コミットの変更があると `switch` できない。コミットするか stash してから切る。無関係な差分を抱えたまま切りたくなったら、別の変更が混ざっている合図なので、いったんユーザーに確認する。
+
 ## ブランチの削除
 
 - マージ済みのブランチは、リポジトリ設定（`delete_branch_on_merge=true`）により GitHub 側で自動削除される。マージ後にリモートブランチが残っていた場合は `git push origin --delete <branch>` で削除する。
@@ -50,7 +63,12 @@ PR のマージは**通常マージ（マージコミット）**を使う。`gh 
 
 このリポジトリでは、同一リポジトリを複数のセッションや worktree が同時に使うことがある。git 操作の直前に `git status` と `git log` を確認し、他セッションの変更を上書きしたり、自分のコミットへ混入させたりしない。
 
-隔離して作業したい場合は worktree を使う: `git worktree add ../<name> -b <branch> origin/master`
+隔離して作業したい場合は worktree を使う。基点はブランチの作成と同じく、切る直前に取得した `origin/master` にする。
+
+```text
+git fetch origin master
+git worktree add ../<name> -b <branch> origin/master
+```
 
 ## 安全則
 
