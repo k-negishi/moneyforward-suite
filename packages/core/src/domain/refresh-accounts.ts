@@ -59,7 +59,9 @@ export type ApplicationResult =
  * （進行中シグナルの出現だけでも受付の確認として成功とする）。
  */
 export const toApplicationResult = (outcome: RefreshAccountsOutcome): ApplicationResult => {
-  if (outcome.authLost) return { status: 'FAILURE', errorCode: 'AUTH_REQUIRED' }
+  if (outcome.authLost) {
+    return { status: 'FAILURE', errorCode: 'AUTH_REQUIRED' }
+  }
 
   // 判定は ACCEPTED との比較で行い、受付の語彙が増えても受付側へ倒れないようにする（fail closed）。
   if (outcome.acceptance !== 'ACCEPTED') {

@@ -193,9 +193,11 @@ const collectWorkflowViolations = (filePaths: readonly string[]): Violation[] =>
   const violations: Violation[] = []
 
   for (const relativePath of filePaths) {
-    if (!relativePath.startsWith(githubDirectoryPrefix)) continue
+    if (!relativePath.startsWith(githubDirectoryPrefix)) {
+      continue
+    }
 
-    const lines = readFileSync(join(repoRoot, relativePath), 'utf8').split(/\r?\n/)
+    const lines = readFileSync(join(repoRoot, relativePath), 'utf8').split(LINE_BREAK_PATTERN)
 
     lines.forEach((line, index) => {
       if (isForbiddenWorkflowLine(line)) {
@@ -302,7 +304,10 @@ describe('Action 定義の保存物（.github）', () => {
     )
 
     // 列挙の配線が壊れて対象 0 件になっても成功してしまう事故を防ぐ。
-    expect(actionDefinitionFiles.length, '検査対象が 0 件です（列挙の配線を確認してください）').toBeGreaterThan(0)
+    expect(
+      actionDefinitionFiles.length,
+      '検査対象が 0 件です（列挙の配線を確認してください）',
+    ).toBeGreaterThan(0)
 
     const violations = collectWorkflowViolations(actionDefinitionFiles)
     expect(violations, formatWorkflowViolationReport(violations)).toEqual([])
@@ -310,7 +315,7 @@ describe('Action 定義の保存物（.github）', () => {
 })
 
 describe('保存 Action の禁止パターン（誤検出・検出漏れの回帰防止）', () => {
-  const cases: Array<[string, boolean]> = [
+  const cases: [string, boolean][] = [
     // 検出する（バージョンや SHA 固定、大文字表記、前置きの有無、行の位置を問わない）
     ['uses: actions/upload-artifact@v7', true],
     ['      - uses: actions/upload-artifact@v7', true],

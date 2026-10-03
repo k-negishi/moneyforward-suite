@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -33,7 +33,9 @@ const sourceExtensions = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', 
 const targetSourceDirectories = (): string[] => {
   const directories = ['packages/adapter-moneyforward-playwright/src']
   for (const entry of readdirSync(join(repoRoot, 'apps'), { withFileTypes: true })) {
-    if (entry.isDirectory()) directories.push(`apps/${entry.name}/src`)
+    if (entry.isDirectory()) {
+      directories.push(`apps/${entry.name}/src`)
+    }
   }
   return directories
 }
@@ -41,14 +43,17 @@ const targetSourceDirectories = (): string[] => {
 /** ディレクトリ配下のソースファイル（リポジトリルート相対）を再帰的に集める。 */
 const collectSourceFiles = (relativeDirectory: string): string[] => {
   const absoluteDirectory = join(repoRoot, relativeDirectory)
-  if (!existsSync(absoluteDirectory) || !statSync(absoluteDirectory).isDirectory()) return []
+  if (!existsSync(absoluteDirectory) || !statSync(absoluteDirectory).isDirectory()) {
+    return []
+  }
 
   const files: string[] = []
   const walk = (relativePath: string): void => {
     for (const entry of readdirSync(join(repoRoot, relativePath), { withFileTypes: true })) {
       const childPath = `${relativePath}/${entry.name}`
-      if (entry.isDirectory()) walk(childPath)
-      else if (entry.isFile() && sourceExtensions.has(extname(entry.name).toLowerCase())) {
+      if (entry.isDirectory()) {
+        walk(childPath)
+      } else if (entry.isFile() && sourceExtensions.has(extname(entry.name).toLowerCase())) {
         files.push(childPath)
       }
     }
@@ -72,13 +77,19 @@ const optionNames = new Set([...toggleOptionNames, ...pathOptionNames])
 
 const quoteCharacters = new Set(['"', "'", '`'])
 
-const isIdentifierStart = (ch: string): boolean => /[A-Za-z_$]/.test(ch)
-const isIdentifierPart = (ch: string): boolean => /[A-Za-z0-9_$]/.test(ch)
+/** 識別子の 1 文字目・継続文字（ループ内で再コンパイルしないようトップレベルに置く）。 */
+const IDENTIFIER_START_PATTERN = /[A-Za-z_$]/
+const IDENTIFIER_PART_PATTERN = /[A-Za-z0-9_$]/
+
+const isIdentifierStart = (ch: string): boolean => IDENTIFIER_START_PATTERN.test(ch)
+const isIdentifierPart = (ch: string): boolean => IDENTIFIER_PART_PATTERN.test(ch)
 
 /** 空白（スペース・タブ）を読み飛ばした次の位置を返す。 */
 const skipSpaces = (line: string, start: number): number => {
   let i = start
-  while (i < line.length && (line[i] === ' ' || line[i] === '\t')) i += 1
+  while (i < line.length && (line[i] === ' ' || line[i] === '\t')) {
+    i += 1
+  }
   return i
 }
 
@@ -91,7 +102,9 @@ const skipStringLiteral = (line: string, start: number): number => {
       i += 2
       continue
     }
-    if (line[i] === quote) return i + 1
+    if (line[i] === quote) {
+      return i + 1
+    }
     i += 1
   }
   return i
@@ -105,7 +118,9 @@ const findTemplateEnd = (line: string, start: number): number => {
       i += 2
       continue
     }
-    if (line[i] === '`') return i + 1
+    if (line[i] === '`') {
+      return i + 1
+    }
     i += 1
   }
   return -1
@@ -114,7 +129,9 @@ const findTemplateEnd = (line: string, start: number): number => {
 /** 位置 start が文字列リテラルの開始なら中身を返す。開始でなければ null。 */
 const readStringLiteral = (line: string, start: number): string | null => {
   const quote = line[start] as string | undefined
-  if (quote === undefined || !quoteCharacters.has(quote)) return null
+  if (quote === undefined || !quoteCharacters.has(quote)) {
+    return null
+  }
   const end = skipStringLiteral(line, start)
   const closed = end - 1 > start && line[end - 1] === quote
   return closed ? line.slice(start + 1, end - 1) : line.slice(start + 1)
@@ -130,15 +147,23 @@ const nextCodeChar = (line: string, start: number): string => line[skipSpaces(li
  */
 const isTracingSaveCall = (line: string, start: number): boolean => {
   const dot = skipSpaces(line, start)
-  if (line[dot] !== '.') return false
+  if (line[dot] !== '.') {
+    return false
+  }
 
   const nameStart = skipSpaces(line, dot + 1)
-  if (!isIdentifierStart(line[nameStart] ?? '')) return false
+  if (!isIdentifierStart(line[nameStart] ?? '')) {
+    return false
+  }
 
   let end = nameStart + 1
-  while (end < line.length && isIdentifierPart(line[end] as string)) end += 1
+  while (end < line.length && isIdentifierPart(line[end] as string)) {
+    end += 1
+  }
   const method = line.slice(nameStart, end)
-  if (!method.startsWith('start') && !method.startsWith('stop')) return false
+  if (!method.startsWith('start') && !method.startsWith('stop')) {
+    return false
+  }
 
   return nextCodeChar(line, end) === '('
 }
@@ -150,13 +175,19 @@ const isTracingSaveCall = (line: string, start: number): boolean => {
 const readComputedKeyCount = (line: string, start: number): number => {
   const literalStart = skipSpaces(line, start)
   const literal = readStringLiteral(line, literalStart)
-  if (literal === null || !optionNames.has(literal)) return 0
+  if (literal === null || !optionNames.has(literal)) {
+    return 0
+  }
 
   const bracket = skipSpaces(line, skipStringLiteral(line, literalStart))
-  if (line[bracket] !== ']') return 0
+  if (line[bracket] !== ']') {
+    return 0
+  }
 
   const colon = skipSpaces(line, bracket + 1)
-  if (line[colon] !== ':') return 0
+  if (line[colon] !== ':') {
+    return 0
+  }
 
   const valueLiteral = readStringLiteral(line, skipSpaces(line, colon + 1))
   return toggleOptionNames.has(literal) && valueLiteral === 'off' ? 0 : 1
@@ -171,12 +202,12 @@ const readComputedKeyCount = (line: string, start: number): number => {
  */
 const isDestructuringTarget = (line: string, fromIndex: number): boolean => {
   const close = line.indexOf('}', fromIndex)
-  if (close === -1) return false
+  if (close === -1) {
+    return false
+  }
 
   const afterIndex = skipSpaces(line, close + 1)
-  return (
-    line[afterIndex] === '=' && line[afterIndex + 1] !== '=' && line[afterIndex + 1] !== '>'
-  )
+  return line[afterIndex] === '=' && line[afterIndex + 1] !== '=' && line[afterIndex + 1] !== '>'
 }
 
 /**
@@ -184,11 +215,15 @@ const isDestructuringTarget = (line: string, fromIndex: number): boolean => {
  * `{` か `,`）の識別子で、直後が `,` / `}` のものを有効化として扱う（分割代入は除外する）。
  */
 const isShorthandOptionKey = (line: string, nameEnd: number, lastCodeChar: string): boolean => {
-  if (!isObjectKeyPosition(lastCodeChar)) return false
+  if (!isObjectKeyPosition(lastCodeChar)) {
+    return false
+  }
 
   const nextIndex = skipSpaces(line, nameEnd)
   const next = line[nextIndex] ?? ''
-  if (next !== ',' && next !== '}') return false
+  if (next !== ',' && next !== '}') {
+    return false
+  }
 
   return !isDestructuringTarget(line, nextIndex)
 }
@@ -271,7 +306,9 @@ const scanLine = (line: string, initial: ScanCarryState): LineScanResult => {
       i += 2
       continue
     }
-    if (ch === '/' && line[i + 1] === '/') break // 行コメント（行末まで）
+    if (ch === '/' && line[i + 1] === '/') {
+      break // 行コメント（行末まで）
+    }
     if (ch === '`') {
       const end = findTemplateEnd(line, i + 1)
       if (end === -1) {
@@ -281,11 +318,17 @@ const scanLine = (line: string, initial: ScanCarryState): LineScanResult => {
       const content = line.slice(i + 1, end - 1)
       // テンプレートキー（{ `trace`: 'on' }）の検出。補間（${...}）を含む場合は動的なため
       // 対象外。キー位置と直後の `:` の両方を見て、三項演算子などの誤検出を抑える。
-      if (!content.includes('${') && isObjectKeyPosition(lastCodeChar) && optionNames.has(content)) {
+      if (
+        !content.includes('${') &&
+        isObjectKeyPosition(lastCodeChar) &&
+        optionNames.has(content)
+      ) {
         const colon = skipSpaces(line, end)
         if (line[colon] === ':') {
           const valueLiteral = readStringLiteral(line, skipSpaces(line, colon + 1))
-          if (!(toggleOptionNames.has(content) && valueLiteral === 'off')) count += 1
+          if (!(toggleOptionNames.has(content) && valueLiteral === 'off')) {
+            count += 1
+          }
         }
       }
       lastCodeChar = '`'
@@ -302,7 +345,9 @@ const scanLine = (line: string, initial: ScanCarryState): LineScanResult => {
         if (line[colon] === ':') {
           const valueStart = skipSpaces(line, colon + 1)
           const valueLiteral = readStringLiteral(line, valueStart)
-          if (!(toggleOptionNames.has(literal) && valueLiteral === 'off')) count += 1
+          if (!(toggleOptionNames.has(literal) && valueLiteral === 'off')) {
+            count += 1
+          }
         }
       }
       lastCodeChar = ch
@@ -312,7 +357,9 @@ const scanLine = (line: string, initial: ScanCarryState): LineScanResult => {
 
     if (isIdentifierStart(ch)) {
       let end = i + 1
-      while (end < line.length && isIdentifierPart(line[end] as string)) end += 1
+      while (end < line.length && isIdentifierPart(line[end] as string)) {
+        end += 1
+      }
       const name = line.slice(i, end)
 
       if (optionNames.has(name)) {
@@ -333,13 +380,18 @@ const scanLine = (line: string, initial: ScanCarryState): LineScanResult => {
       }
 
       // options を経ない直接 API 形の検出（保存を有効化する呼び出し・設定）。
-      if (name === 'tracing' && isTracingSaveCall(line, end)) count += 1
-      else if (name === 'screenshot' && lastCodeChar === '.' && nextCodeChar(line, end) === '(') {
+      if (name === 'tracing' && isTracingSaveCall(line, end)) {
         count += 1
-      } else if (name === 'tracesDir') count += 1
+      } else if (name === 'screenshot' && lastCodeChar === '.' && nextCodeChar(line, end) === '(') {
+        count += 1
+      } else if (name === 'tracesDir') {
+        count += 1
+      }
 
       // 省略記法（{ trace }）の検出。
-      if (optionNames.has(name) && isShorthandOptionKey(line, end, lastCodeChar)) count += 1
+      if (optionNames.has(name) && isShorthandOptionKey(line, end, lastCodeChar)) {
+        count += 1
+      }
 
       lastCodeChar = name
       i = end
@@ -348,10 +400,14 @@ const scanLine = (line: string, initial: ScanCarryState): LineScanResult => {
 
     // computed key（{ ['trace']: 'on' }）の検出。キー位置の `[` からだけ読むことで、
     // 三項演算子の配列リテラル（cond ? ['trace'] : ...）を誤検出しない。
-    if (ch === '[' && isObjectKeyPosition(lastCodeChar)) count += readComputedKeyCount(line, i + 1)
+    if (ch === '[' && isObjectKeyPosition(lastCodeChar)) {
+      count += readComputedKeyCount(line, i + 1)
+    }
 
     // 空白は「直前のコード文字」ではないため、キー位置の判定用には記録しない。
-    if (ch !== ' ' && ch !== '\t') lastCodeChar = ch
+    if (ch !== ' ' && ch !== '\t') {
+      lastCodeChar = ch
+    }
     i += 1
   }
 
@@ -367,18 +423,23 @@ interface Violation {
   readonly line: number
 }
 
+/** 行分割の改行パターン（CRLF / LF の両方を扱う。行番号を報告に使うため、ここで分割する）。 */
+const LINE_BREAK_PATTERN = /\r?\n/
+
 /** 対象ファイルを走査し、違反した行を集める（行をまたぐコメント状態を持ち越す）。 */
 const collectViolations = (filePaths: readonly string[]): Violation[] => {
   const violations: Violation[] = []
 
   for (const relativePath of filePaths) {
-    const lines = readFileSync(join(repoRoot, relativePath), 'utf8').split(/\r?\n/)
+    const lines = readFileSync(join(repoRoot, relativePath), 'utf8').split(LINE_BREAK_PATTERN)
     let state = initialScanCarryState
 
     lines.forEach((line, index) => {
       const result = scanLine(line, state)
       state = result.state
-      if (result.enablingOptionCount > 0) violations.push({ path: relativePath, line: index + 1 })
+      if (result.enablingOptionCount > 0) {
+        violations.push({ path: relativePath, line: index + 1 })
+      }
     })
   }
 
@@ -424,7 +485,7 @@ describe('Playwright Artifact の非保存（ソースの静的検査）', () =>
 })
 
 describe('有効化設定の検出パターン（誤検出・検出漏れの回帰防止）', () => {
-  const cases: Array<[string, boolean]> = [
+  const cases: [string, boolean][] = [
     // 検出する（保存を有効化する値・式）
     [`await browser.newContext({ trace: 'on' })`, true],
     [`await browser.newContext({ trace: 'retain-on-failure' })`, true],
@@ -478,7 +539,7 @@ describe('有効化設定の検出パターン（誤検出・検出漏れの回�
     ['const { trace } = options', false], // 分割代入（オブジェクト生成ではない）
     ['const { trace, video } = options', false],
     ['const { trace: traceValue } = options', false], // 分割代入のリネーム
-    ['const kind = flag ? [\'trace\'] : [\'video\']', false], // 三項演算子の配列リテラル
+    ["const kind = flag ? ['trace'] : ['video']", false], // 三項演算子の配列リテラル
     ['const kind = flag ? `trace` : `video`', false], // 三項演算子のテンプレート
     ['await context.tracing.startChunk', false], // 呼び出しではない（`(` が無い）
     [`const options = { ['trace']: 'off' }`, false], // computed key + 明示的な無効化
@@ -548,7 +609,9 @@ const collectViolationsFromLines = (lines: readonly string[]): number[] => {
   lines.forEach((line, index) => {
     const result = scanLine(line, state)
     state = result.state
-    if (result.enablingOptionCount > 0) violations.push(index + 1)
+    if (result.enablingOptionCount > 0) {
+      violations.push(index + 1)
+    }
   })
 
   return violations

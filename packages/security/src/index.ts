@@ -1,8 +1,8 @@
 // 認証セッション管理と allow-list ロガー（ADR-0011〜ADR-0017）を置く。
 export type {
   LogSink,
-  StructuredLogRecord,
   StructuredLoggerOptions,
+  StructuredLogRecord,
 } from './logging/structured-logger.js'
 export { createStructuredLogger } from './logging/structured-logger.js'
 

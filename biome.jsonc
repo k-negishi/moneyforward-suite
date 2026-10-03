@@ -56,8 +56,10 @@
           "level": "error",
           "options": { "maxLines": 50 }
         },
-        // !!x / +x / ~~x / x + '' などの暗黙の型変換の短縮形を検出し、
-        // Boolean() / Number() / Math.trunc() / String() への明示的な変換を促す。
+        // !!x / +x / -(-x) / x - 0 / x * 1 / x / 1 / x + ''（および += などの複合代入）/
+        // ~arr.indexOf(v) といった暗黙の型変換の短縮形を検出し、Boolean() / Number() / String() /
+        // !== -1 への明示的な変換を促す。~x 単体と ~~x は対象外（オペランドの副作用を
+        // 保つ必要があるため）。
         "noImplicitCoercions": "error",
         // void 演算子は「未処理であることを意図的に示す」用途があるため禁止しない。
         "noVoid": "off"
@@ -65,8 +67,8 @@
 
       "correctness": {
         // JSDoc の可視性タグ（@private / @package）で非公開とした export の import を検出する。
-        // 既定は public 扱いのため、タグが無い現状のコードでは何も検出しないが、将来 @private を
-        // 付けた API が他 package から漏れて import される事故を防ぐ。
+        // 既定は public 扱いのため、タグが無い現状のコードでは何も検出しない。検出の根拠は
+        // 解決したソース内のタグで、node_modules 配下の依存への import は対象外（既知の制限）。
         "noPrivateImports": "error",
         // package.json に宣言していない依存の import を検出する。テストの vitest は
         // 各 package の devDependencies に宣言する（テストファイルだけ devDependencies を
@@ -132,14 +134,16 @@
 
       "security": {
         // 高エントロピー文字列から Secret の混入を検出する。既定値（41）は日本語の説明文を
-        // 誤検出し、このリポジトリでは 146 件が誤検出になって lint が機能しなかった。
-        // 60 へ引き上げると実コードの誤検出が 0 件になり、合成した AWS キー・GitHub トークン・
-        // Slack トークン・JWT 風文字列の検出を実測で確認できたため、この値で有効にする。
-        // 検出の網は補助であり、Secret の一次防衛は .local/ の分離と .gitignore、権限の運用。
-        // 正規に高エントロピーな文字列が必要な箇所（ダミー値など）は理由付きの抑制コメントを使う。
+        // 大量に誤検出し（現行ツリーで 325 件）、このリポジトリでは lint が機能しなかった。
+        // 60 でも日本語のテスト名を 2 件誤検出したため 63 へ引き上げた（63 で誤検出 0 件）。
+        // 閾値 63 の検出の網は主にパターン一致（AWS アクセスキー・Slack・Twilio・URL パスワード等）
+        // で、エントロピー検知は補助であり確率的にしか働かない（ランダムな英数字トークンで実測 6/20）。
+        // 閾値の前提はテストで固定し、変更時に再測定を強制する。Secret の一次防衛は .local/ の
+        // 分離・.gitignore・権限の運用であり、このルールは補助である。正規に高エントロピーな
+        // 文字列が必要な箇所（ダミー値など）は理由付きの抑制コメントを使う。
         "noSecrets": {
           "level": "error",
-          "options": { "entropyThreshold": 60 }
+          "options": { "entropyThreshold": 63 }
         }
       },
 
@@ -248,15 +252,25 @@
     },
     {
       // テストは環境変数の差し替え・namespace import（workspace 配線の検証）・
-      // 表駆動テストによる長いブロックを許容する。
+      // 表駆動テストによる長いブロックを許容する。テストのダブル構築で使う型アサーションは
+      // 本番コードの型安全に影響しないため許可し、認知複雑度は「ケースの列挙」で上がりやすい
+      // ため上限を外す（いずれも本番コードには適用しない）。
       "includes": ["**/test/**", "tests/**"],
       "linter": {
         "rules": {
-          "complexity": { "noExcessiveLinesPerFunction": "off" },
+          "complexity": {
+            "noExcessiveLinesPerFunction": "off",
+            "noExcessiveCognitiveComplexity": "off"
+          },
+          "nursery": { "noUnsafeTypeAssertion": "off" },
           "performance": { "noNamespaceImport": "off" },
           "style": {
             "noExcessiveLinesPerFile": "off",
-            "noProcessEnv": "off"
+            "noProcessEnv": "off",
+            // テストの数値は期待値・fixture のデータそのもの（検出行番号の配列、合成値の
+            // ミリ秒など）で、名前付けは意味を増やさない。noMagicNumbers は本番コードの
+            // 可読性のためのルールとしてテストでは無効化する。
+            "noMagicNumbers": "off"
           }
         }
       }
@@ -300,10 +314,36 @@
       }
     },
     {
+      // AWS SDK / Secrets Manager API の形状は外部契約のため、プロパティ名（SecretId・SecretString・
+      // VersionId 等の PascalCase）をそのまま書く箇所がある（SDK 入力の構築と、応答を模したテストの
+      // fixture）。この package に限り、オブジェクトリテラルのプロパティ名に PascalCase も許可する。
+      // 許可は外部 API の形状名に限る（自作の設定・DTO の命名へ広げない。緩みはレビューで確認する）。
+      "includes": ["packages/adapter-aws/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useNamingConvention": {
+              "level": "error",
+              "options": {
+                "conventions": [
+                  {
+                    "selector": { "kind": "objectLiteralProperty" },
+                    "formats": ["camelCase", "CONSTANT_CASE", "PascalCase"]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       // Core は Framework / Runtime 非依存に保つ（ADR-0006）。Runtime / Framework 依存の
-      // import を分類ごとのメッセージ付きで機械的に塞ぐ。Architecture Test は未実装のため、
-      // 現時点で Core への混入を編集時に止めるのはこのルールのみである（import 文のみを検査する
-      // ため、package.json への依存追加は検出できない）。
+      // import を分類ごとのメッセージ付きで機械的に塞ぐ。グループはパッケージ名だけでなく
+      // `/*`（1 階層）と `/**`（入れ子）の subpath 形も列挙する（パッケージ名の指定だけでは
+      // subpath 付きの import が素通りするため）。これは編集時の一次防波堤であり、
+      // 最終的な保証は Architecture Test（ADR-0034・`pnpm test:architecture`）が担う。
+      // import 文のみを検査するため、package.json への依存追加は検出できない。
       "includes": ["packages/core/**"],
       "linter": {
         "rules": {
@@ -316,37 +356,129 @@
                     "group": [
                       "playwright",
                       "playwright/*",
+                      "playwright/**",
                       "playwright-core",
+                      "playwright-core/*",
+                      "playwright-core/**",
                       "playwright-*",
+                      "playwright-*/**",
                       "@playwright/*",
+                      "@playwright/**",
                       "puppeteer",
+                      "puppeteer/*",
+                      "puppeteer/**",
                       "puppeteer-*",
-                      "selenium-webdriver"
+                      "puppeteer-*/**",
+                      "@puppeteer/*",
+                      "@puppeteer/**",
+                      "selenium-webdriver",
+                      "selenium-webdriver/*",
+                      "selenium-webdriver/**"
                     ],
                     "message": "Core へブラウザ自動化の依存を持ち込まない。ブラウザ操作は Adapter 側に置く。"
                   },
                   {
-                    "group": ["@aws-sdk/*", "aws-sdk", "@smithy/*", "aws-cdk-lib", "@aws-cdk/*"],
+                    "group": [
+                      "@aws-sdk/*",
+                      "@aws-sdk/**",
+                      "aws-sdk",
+                      "aws-sdk/*",
+                      "aws-sdk/**",
+                      "@smithy/*",
+                      "@smithy/**",
+                      "aws-cdk-lib",
+                      "aws-cdk-lib/*",
+                      "aws-cdk-lib/**",
+                      "@aws-cdk/*",
+                      "@aws-cdk/**"
+                    ],
                     "message": "Core へ AWS SDK・CDK を持ち込まない（EC2 クライアントを含む）。AWS 依存は Adapter 側に置く。"
                   },
                   {
-                    "group": ["aws-lambda", "@types/aws-lambda", "@aws-lambda-powertools/*"],
+                    "group": [
+                      "aws-lambda",
+                      "aws-lambda/*",
+                      "aws-lambda/**",
+                      "@types/aws-lambda",
+                      "@types/aws-lambda/*",
+                      "@types/aws-lambda/**",
+                      "@aws-lambda-powertools/*",
+                      "@aws-lambda-powertools/**",
+                      "@middy/*",
+                      "@middy/**"
+                    ],
                     "message": "Core へ Lambda ランタイムの依存を持ち込まない。起動コードは Application 側に置く。"
                   },
                   {
-                    "group": ["appium", "appium-*", "webdriverio", "@wdio/*"],
+                    "group": [
+                      "appium",
+                      "appium/*",
+                      "appium/**",
+                      "appium-*",
+                      "appium-*/**",
+                      "@appium/*",
+                      "@appium/**",
+                      "webdriverio",
+                      "webdriverio/*",
+                      "webdriverio/**",
+                      "@wdio/*",
+                      "@wdio/**"
+                    ],
                     "message": "Core へモバイル自動化の依存を持ち込まない。"
                   },
                   {
-                    "group": ["uiautomator2"],
+                    "group": ["uiautomator2", "uiautomator2/*", "uiautomator2/**"],
                     "message": "Core へ UIAutomator2 の依存を持ち込まない。"
                   },
                   {
-                    "group": ["android", "android-*", "adb"],
+                    "group": [
+                      "android",
+                      "android/*",
+                      "android/**",
+                      "android-*",
+                      "android-*/**",
+                      "adb",
+                      "adb/*",
+                      "adb/**",
+                      "adbkit",
+                      "adbkit/*",
+                      "adbkit/**"
+                    ],
                     "message": "Core へ Android SDK・ツールの依存を持ち込まない。"
                   },
                   {
-                    "group": ["express", "fastify", "hono", "koa", "@nestjs/*"],
+                    "group": [
+                      "express",
+                      "express/*",
+                      "express/**",
+                      "fastify",
+                      "fastify/*",
+                      "fastify/**",
+                      "@fastify/*",
+                      "@fastify/**",
+                      "hono",
+                      "hono/*",
+                      "hono/**",
+                      "koa",
+                      "koa/*",
+                      "koa/**",
+                      "@koa/*",
+                      "@koa/**",
+                      "@hapi/*",
+                      "@hapi/**",
+                      "@adonisjs/*",
+                      "@adonisjs/**",
+                      "@remix-run/*",
+                      "@remix-run/**",
+                      "next",
+                      "next/*",
+                      "next/**",
+                      "nuxt",
+                      "nuxt/*",
+                      "nuxt/**",
+                      "@nestjs/*",
+                      "@nestjs/**"
+                    ],
                     "message": "Core へ Web Framework を持ち込まない。HTTP の処理は Adapter 側に置く。"
                   }
                 ]

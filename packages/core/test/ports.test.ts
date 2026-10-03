@@ -1,6 +1,4 @@
-import { expectTypeOf, describe, it, expect } from 'vitest'
-
-import { isLogJob, isLogStatus } from '../src/index.js'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 import type {
   AuthSession,
   LogEvent,
@@ -15,6 +13,7 @@ import type {
   SecretValue,
   SessionVerification,
 } from '../src/index.js'
+import { isLogJob, isLogStatus } from '../src/index.js'
 
 // Port の契約は expectTypeOf（コンパイル時の検査）で固定する。
 // これにより Page / Locator 等の UI 詳細や自由文字列フィールドが型へ混入すると、
@@ -68,10 +67,16 @@ describe('LoggerPort の型契約', () => {
   })
 
   it('Allow List 外の field（自由文字列）は追加できない', () => {
-    // 余剰プロパティのエラーは該当行に出るため、リテラルを 1 行で書き、抑止コメントの
-    // 直後の行と一致させる。
-    // @ts-expect-error message は Allow List にない
-    const event: LogEvent = { application: 'automation', job: 'refresh-accounts', status: 'FAILURE', attempt: 1, durationMs: 10, message: 'failed' }
+    // 余剰プロパティのエラーは該当プロパティの行に出るため、抑止コメントを直前に置く。
+    const event: LogEvent = {
+      application: 'automation',
+      job: 'refresh-accounts',
+      status: 'FAILURE',
+      attempt: 1,
+      durationMs: 10,
+      // @ts-expect-error message は Allow List にない
+      message: 'failed',
+    }
     void event
   })
 })

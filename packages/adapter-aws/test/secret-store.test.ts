@@ -1,14 +1,11 @@
 import { Buffer } from 'node:buffer'
 import { inspect } from 'node:util'
-
-import { GetSecretValueCommand } from '@aws-sdk/client-secrets-manager'
 import type { SecretsManagerClient } from '@aws-sdk/client-secrets-manager'
-import { describe, expect, expectTypeOf, it, vi } from 'vitest'
-
+import { GetSecretValueCommand } from '@aws-sdk/client-secrets-manager'
 import type { ErrorCode, Result, SecretId, SecretValue } from '@mf-suite/core'
-
-import { AwsSecretsManagerSecretStore } from '../src/index.js'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import type { SecretsManagerClientLike } from '../src/index.js'
+import { AwsSecretsManagerSecretStore } from '../src/index.js'
 
 // テストは合成の Secret と fake client だけを使う（実 AWS へは接続しない）。
 // Secret の値は「漏えい検知用の目印」として使い、失敗結果の直列化とすべての出力経路
@@ -31,9 +28,10 @@ const createFakeClient = (handle: (command: unknown) => unknown): FakeClient => 
   return {
     sentCommands,
     client: {
-      async send(command: unknown): Promise<unknown> {
+      // 待機する処理はないため async は付けず、Promise を直接返す（useAwait に合わせる）。
+      send(command: unknown): Promise<unknown> {
         sentCommands.push(command)
-        return handle(command)
+        return Promise.resolve(handle(command))
       },
     },
   }
@@ -56,13 +54,17 @@ const readSentSecretId = (command: unknown): string | undefined =>
 
 /** 失敗を期待して分類を取り出す（成功した場合はテストを落とす）。 */
 const expectFailure = (result: Result<SecretValue>): ErrorCode => {
-  if (result.ok) throw new Error('失敗を期待したが成功した')
+  if (result.ok) {
+    throw new Error('失敗を期待したが成功した')
+  }
   return result.error.code
 }
 
 /** 成功を期待して値を取り出す（失敗した場合はテストを落とす）。 */
 const readSecretValue = (result: Result<SecretValue>): string => {
-  if (!result.ok) throw new Error(`成功を期待したが失敗した: ${result.error.code}`)
+  if (!result.ok) {
+    throw new Error(`成功を期待したが失敗した: ${result.error.code}`)
+  }
   // 値は opaque のため、合成データとの比較はテスト側のキャストで行う。
   return result.value as unknown as string
 }
@@ -74,11 +76,15 @@ const readSecretValue = (result: Result<SecretValue>): string => {
  * inspect で構造を残す。
  */
 const stringifyOutputArg = (arg: unknown): string => {
-  if (typeof arg === 'string') return arg
+  if (typeof arg === 'string') {
+    return arg
+  }
   if (arg instanceof Uint8Array) {
     return Buffer.from(arg.buffer, arg.byteOffset, arg.byteLength).toString('utf8')
   }
-  if (arg instanceof Error) return `${arg.name}: ${arg.message}`
+  if (arg instanceof Error) {
+    return `${arg.name}: ${arg.message}`
+  }
   try {
     return JSON.stringify(arg) ?? inspect(arg)
   } catch {
@@ -275,10 +281,7 @@ describe('AwsSecretsManagerSecretStore: Secret 値の非漏えい', () => {
 
   it('Buffer の出力引数は数値列に潰さず UTF-8 としてデコードして検査する', () => {
     const padded = Buffer.from(`prefix:${SYNTHETIC_SECRET_VALUE}:suffix`, 'utf8')
-    const view = padded.subarray(
-      'prefix:'.length,
-      'prefix:'.length + SYNTHETIC_SECRET_VALUE.length,
-    )
+    const view = padded.subarray('prefix:'.length, 'prefix:'.length + SYNTHETIC_SECRET_VALUE.length)
 
     // 値は数値列（JSON の data）ではなく文字列として現れる。
     expect(stringifyOutputArg(padded)).toContain(SYNTHETIC_SECRET_VALUE)
@@ -291,7 +294,9 @@ describe('AwsSecretsManagerSecretStore: Secret 値の非漏えい', () => {
 
     const result = await createStore({ client: fake.client }).getSecret(SYNTHETIC_SECRET_ID)
 
-    if (!result.ok) throw new Error(`成功を期待したが失敗した: ${result.error.code}`)
+    if (!result.ok) {
+      throw new Error(`成功を期待したが失敗した: ${result.error.code}`)
+    }
     // ブランドはファントムのため、実行時の値は生の文字列である。
     expect(typeof result.value).toBe('string')
     // したがって成功結果を直列化すると値が現れる。呼び出し側は成功値を直列化・ログ出力しない
@@ -306,7 +311,7 @@ describe('AwsSecretsManagerSecretStore: 注入境界の型契約', () => {
 
     // 負の対照: send を持たない値は注入できない（型検査が効いていることの確認）
     // @ts-expect-error send を持たないため SecretsManagerClientLike ではない
-    const notAClient: SecretsManagerClientLike = 'synthetic'
-    void notAClient
+    const notClient: SecretsManagerClientLike = 'synthetic'
+    void notClient
   })
 })
