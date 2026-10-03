@@ -49,3 +49,4 @@
 | [0024](0024-iac-per-deployment-unit.md) | Infrastructure as Code を Deployment Unit 単位で管理する | Accepted | 2026-10-03 |
 | [0025](0025-external-system-boundaries.md) | 外部システム境界を Adapter で分離する（MoneyForward と PayPay） | Accepted | 2026-10-03 |
 | [0026](0026-adr-trigger-policy.md) | ADR の作成トリガーを定め、開発フローに組み込む | Accepted | 2026-10-03 |
+| [0027](0027-review-subagent-migration.md) | レビュー工程をリポジトリ専用サブエージェント 2 体へ移行する | Proposed | 2026-10-03 |
