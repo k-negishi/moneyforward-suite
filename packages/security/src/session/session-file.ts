@@ -12,39 +12,20 @@ import {
 } from 'node:fs'
 import { dirname } from 'node:path'
 
-import type { BrowserContext } from 'playwright'
+import { isSessionState } from './session-state.js'
+import type { SessionState } from './session-state.js'
 
 /**
- * 認証セッション（storageState）の保存と読込。
+ * 認証セッション（Cookie と localStorage）の保存と読込。
  * 中身は Cookie / セッショントークンを含む Secret のため、返り値の内容を
  * ログ・エラー・標準出力へ出さない（パスは出力してよい）。ADR-0012 / ADR-0013。
  */
 
-/** context.storageState() が返す構造の型。 */
-export type StorageState = Awaited<ReturnType<BrowserContext['storageState']>>
-
 /** セッション読込の結果。欠如と破損を区別して fail closed で扱う（ADR-0011）。 */
 export type SessionLoadResult =
-  | { readonly status: 'OK'; readonly storageState: StorageState }
+  | { readonly status: 'OK'; readonly sessionState: SessionState }
   | { readonly status: 'SESSION_MISSING' }
   | { readonly status: 'SESSION_INVALID' }
-
-/** 配列を含まないオブジェクトかどうか。 */
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-
-/** storageState として最低限必要な形（cookies / origins がオブジェクトの配列）を満たすか。 */
-const isStorageState = (value: unknown): value is StorageState => {
-  if (!isPlainObject(value)) return false
-
-  const { cookies, origins } = value
-  return (
-    Array.isArray(cookies) &&
-    cookies.every(isPlainObject) &&
-    Array.isArray(origins) &&
-    origins.every(isPlainObject)
-  )
-}
 
 /**
  * セッションファイルを読み込む。
@@ -80,8 +61,8 @@ export const readSessionFile = (filePath: string): SessionLoadResult => {
     return { status: 'SESSION_INVALID' }
   }
 
-  if (!isStorageState(parsed)) return { status: 'SESSION_INVALID' }
-  return { status: 'OK', storageState: parsed }
+  if (!isSessionState(parsed)) return { status: 'SESSION_INVALID' }
+  return { status: 'OK', sessionState: parsed }
 }
 
 /**
@@ -93,7 +74,7 @@ export const readSessionFile = (filePath: string): SessionLoadResult => {
  * 事前に symlink を置き、参照先のファイルへ Secret を書き込ませる攻撃を防ぐ。
  * 内容は Secret のため、戻り値や例外へ含めない。
  */
-export const saveSessionState = (filePath: string, storageState: StorageState): void => {
+export const saveSessionState = (filePath: string, sessionState: SessionState): void => {
   const directory = dirname(filePath)
   mkdirSync(directory, { recursive: true, mode: 0o700 })
 
@@ -102,7 +83,7 @@ export const saveSessionState = (filePath: string, storageState: StorageState): 
   try {
     // 'wx' は既存ファイル・symlink があれば EEXIST で失敗する（追従しない）。
     descriptor = openSync(temporaryPath, 'wx', 0o600)
-    writeFileSync(descriptor, `${JSON.stringify(storageState, null, 2)}\n`)
+    writeFileSync(descriptor, `${JSON.stringify(sessionState, null, 2)}\n`)
     closeSync(descriptor)
     descriptor = null
     renameSync(temporaryPath, filePath)

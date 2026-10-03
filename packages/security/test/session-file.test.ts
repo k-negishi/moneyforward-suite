@@ -15,8 +15,8 @@ import { join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { readSessionFile, saveSessionState } from '../src/spike/session.js'
-import type { StorageState } from '../src/spike/session.js'
+import { readSessionFile, saveSessionState } from '../src/session/session-file.js'
+import type { SessionState } from '../src/session/session-state.js'
 
 // 一時ディレクトリだけで検証する（実際の .local/ には触れない）。中身は合成データのみ。
 describe('session の保存と読込', () => {
@@ -30,7 +30,7 @@ describe('session の保存と読込', () => {
     rmSync(workDirectory, { recursive: true, force: true })
   })
 
-  const syntheticStorageState: StorageState = {
+  const syntheticSessionState: SessionState = {
     cookies: [
       {
         name: 'synthetic_cookie',
@@ -63,7 +63,7 @@ describe('session の保存と読込', () => {
     expect(result).toEqual({ status: 'SESSION_INVALID' })
   })
 
-  it('storageState の形を満たさない JSON は SESSION_INVALID を返す', () => {
+  it('sessionState の形を満たさない JSON は SESSION_INVALID を返す', () => {
     const filePath = join(workDirectory, 'wrong-shape.json')
     writeFileSync(filePath, JSON.stringify({ cookies: {}, origins: [] }))
     chmodSync(filePath, 0o600)
@@ -90,19 +90,19 @@ describe('session の保存と読込', () => {
     }
   })
 
-  it('保存した storageState を読み戻せる', () => {
+  it('保存した sessionState を読み戻せる', () => {
     const filePath = join(workDirectory, '.local', 'moneyforward-session.json')
-    saveSessionState(filePath, syntheticStorageState)
+    saveSessionState(filePath, syntheticSessionState)
 
     const result = readSessionFile(filePath)
 
-    expect(result).toEqual({ status: 'OK', storageState: syntheticStorageState })
+    expect(result).toEqual({ status: 'OK', sessionState: syntheticSessionState })
   })
 
   it.skipIf(process.platform === 'win32')('保存時にディレクトリを 0700・ファイルを 0600 にする', () => {
     const directory = join(workDirectory, '.local')
     const filePath = join(directory, 'moneyforward-session.json')
-    saveSessionState(filePath, syntheticStorageState)
+    saveSessionState(filePath, syntheticSessionState)
 
     expect(statSync(directory).mode & 0o777).toBe(0o700)
     expect(statSync(filePath).mode & 0o777).toBe(0o600)
@@ -112,7 +112,7 @@ describe('session の保存と読込', () => {
     const filePath = join(workDirectory, 'moneyforward-session.json')
     writeFileSync(filePath, '{}', { mode: 0o644 })
 
-    saveSessionState(filePath, syntheticStorageState)
+    saveSessionState(filePath, syntheticSessionState)
 
     expect(statSync(filePath).mode & 0o777).toBe(0o600)
   })
@@ -124,7 +124,7 @@ describe('session の保存と読込', () => {
     mkdirSync(directory, { recursive: true })
     chmodSync(directory, 0o755)
 
-    saveSessionState(filePath, syntheticStorageState)
+    saveSessionState(filePath, syntheticSessionState)
 
     expect(statSync(directory).mode & 0o777).toBe(0o755)
     expect(statSync(filePath).mode & 0o777).toBe(0o600)
@@ -134,8 +134,8 @@ describe('session の保存と読込', () => {
     'group / other に読み取り権があるファイルは、内容を読まずに SESSION_INVALID を返す',
     () => {
       const filePath = join(workDirectory, 'too-open.json')
-      // 内容が正しい storageState でも、他ユーザーが読める権限なら fail closed で拒否する。
-      writeFileSync(filePath, JSON.stringify(syntheticStorageState))
+      // 内容が正しい sessionState でも、他ユーザーが読める権限なら fail closed で拒否する。
+      writeFileSync(filePath, JSON.stringify(syntheticSessionState))
       chmodSync(filePath, 0o644)
 
       expect(readSessionFile(filePath)).toEqual({ status: 'SESSION_INVALID' })
@@ -144,15 +144,15 @@ describe('session の保存と読込', () => {
 
   it.skipIf(process.platform === 'win32')('0600 のファイルは通常どおり読み込める', () => {
     const filePath = join(workDirectory, 'owner-only.json')
-    writeFileSync(filePath, JSON.stringify(syntheticStorageState))
+    writeFileSync(filePath, JSON.stringify(syntheticSessionState))
     chmodSync(filePath, 0o600)
 
-    expect(readSessionFile(filePath)).toEqual({ status: 'OK', storageState: syntheticStorageState })
+    expect(readSessionFile(filePath)).toEqual({ status: 'OK', sessionState: syntheticSessionState })
   })
 
   it('保存後に一時ファイル（.tmp）が残らない', () => {
     const filePath = join(workDirectory, '.local', 'moneyforward-session.json')
-    saveSessionState(filePath, syntheticStorageState)
+    saveSessionState(filePath, syntheticSessionState)
 
     expect(existsSync(`${filePath}.tmp`)).toBe(false)
     expect(readdirSync(join(workDirectory, '.local'))).toEqual(['moneyforward-session.json'])
@@ -167,12 +167,12 @@ describe('session の保存と読込', () => {
       // 予測可能な一時パスを狙い、参照先のファイルを Secret で上書きさせる攻撃を再現する。
       symlinkSync(victimPath, `${filePath}.tmp`)
 
-      saveSessionState(filePath, syntheticStorageState)
+      saveSessionState(filePath, syntheticSessionState)
 
       expect(readFileSync(victimPath, 'utf8')).toBe('victim-content')
       expect(readSessionFile(filePath)).toEqual({
         status: 'OK',
-        storageState: syntheticStorageState,
+        sessionState: syntheticSessionState,
       })
     },
   )

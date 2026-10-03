@@ -5,7 +5,12 @@
     "noEmit": true,
     "composite": false,
     // テストを含めるため、リポジトリルートまでを対象にする
-    "rootDir": "../.."
+    "rootDir": "../..",
+    "paths": {
+      // 依存 package は dist ではなく src へ解決する（ビルド前でも型検査できる）
+      "@mf-suite/core": ["../../packages/core/src/index.ts"],
+      "@mf-suite/security": ["../../packages/security/src/index.ts"]
+    }
   },
   "include": ["src", "test"]
 }

@@ -1,7 +1,10 @@
+import type { RefreshExecutionOutcome, RefreshTargetsOutcome } from '../moneyforward/page-client.js'
+
 /**
- * refresh CLI の引数解析・終了コード・使い方・最終判定。
- * エントリポイント（refresh.ts）から切り離し、単体テストできるようにする。
+ * refresh CLI の引数解析・終了コード・使い方・状態写像。
+ * エントリポイント（spike/refresh.ts）から切り離し、単体テストできるようにする。
  * 引数で URL / Selector / 操作を受け付けない（ADR-0010）。
+ * 状態語彙（SpikeStatus）は暫定で、正式 CLI の語彙・終了コードへ置き換えるまでの間だけ使う。
  */
 
 /** CLI が返し得る状態（語彙は暫定）。 */
@@ -68,12 +71,26 @@ export const parseRefreshArgs = (argv: readonly string[]): RefreshOptions | null
 }
 
 /**
- * 一括更新の最終判定（純関数）。
- * クリックできて、かつ受付（行の変化・進行中シグナルの出現）を確認できた場合のみ受理する。
- * どちらかが欠ける場合は受理の根拠にしない（fail closed）。
+ * ページ操作の結果を CLI の状態語彙へ写す（純関数・暫定）。
+ * 受付が確認できた場合のみ REFRESH_ACCEPTED とし、それ以外は停止側へ倒す（fail closed）。
+ * 認証失効は受付の有無によらず AUTH_REQUIRED とする。
  */
-export const decideBulkStatus = (outcome: {
-  readonly clicked: boolean
-  readonly accepted: boolean
-}): 'REFRESH_ACCEPTED' | 'TEMPORARY_FAILURE' =>
-  outcome.clicked && outcome.accepted ? 'REFRESH_ACCEPTED' : 'TEMPORARY_FAILURE'
+export const toSpikeStatus = (
+  outcome: RefreshTargetsOutcome | RefreshExecutionOutcome,
+): SpikeStatus => {
+  switch (outcome.status) {
+    case 'AVAILABLE':
+      return 'REFRESH_AVAILABLE'
+    case 'OBSERVED':
+      if (outcome.observation.authLost) return 'AUTH_REQUIRED'
+      return outcome.observation.acceptance === 'ACCEPTED'
+        ? 'REFRESH_ACCEPTED'
+        : 'TEMPORARY_FAILURE'
+    case 'AUTH_REQUIRED':
+    case 'SESSION_INVALID':
+    case 'TARGET_NOT_FOUND':
+    case 'TARGET_AMBIGUOUS':
+    case 'TEMPORARY_FAILURE':
+      return outcome.status
+  }
+}

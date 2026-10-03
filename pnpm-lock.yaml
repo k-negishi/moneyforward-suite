@@ -196,6 +196,12 @@ importers:
 
   packages/adapter-moneyforward-playwright:
     dependencies:
+      '@mf-suite/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mf-suite/security':
+        specifier: workspace:*
+        version: link:../security
       playwright:
         specifier: ^1.63.0
         version: 1.63.0
