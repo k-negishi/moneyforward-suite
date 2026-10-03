@@ -14,7 +14,12 @@ import {
   resolveSessionFilePath,
 } from './config.js'
 import type { LocatorRoot, LocatorStrategy } from './config.js'
-import { EXIT_CODE_BY_STATUS, REFRESH_USAGE, parseRefreshArgs } from './refresh-cli.js'
+import {
+  EXIT_CODE_BY_STATUS,
+  REFRESH_USAGE,
+  decideBulkStatus,
+  parseRefreshArgs,
+} from './refresh-cli.js'
 import type { RefreshOptions, SpikeStatus } from './refresh-cli.js'
 import { readSessionFile } from './session.js'
 import { classifyAuthState, detectRowChanges, isRowSnapshotValid } from './state.js'
@@ -226,14 +231,15 @@ const run = async (options: RefreshOptions): Promise<SpikeStatus> => {
       .then(() => true)
       .catch(() => false)
     // クリックできなければ状態変化を確認できないため、受付としない（fail closed）。
-    if (!clicked) return 'TEMPORARY_FAILURE'
+    if (!clicked) return decideBulkStatus({ clicked, accepted: false })
 
     // クリック後にセッションが失効していないか確認する（失効時は再ログインが必要なため停止する）。
     const authAfterClick = await checkAuthentication(page)
     if (authAfterClick !== 'OK') return authAfterClick
 
     // 行の変化（受付）が確認できれば受理。失敗検知・変化なしは fail closed で停止する。
-    return (await waitForRowChanges(page, rowsBefore)) ? 'REFRESH_ACCEPTED' : 'TEMPORARY_FAILURE'
+    const accepted = await waitForRowChanges(page, rowsBefore)
+    return decideBulkStatus({ clicked, accepted })
   } finally {
     await browser.close()
   }

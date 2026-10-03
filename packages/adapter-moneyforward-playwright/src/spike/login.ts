@@ -13,7 +13,7 @@ import {
 } from './config.js'
 import { waitForEnter } from './prompt.js'
 import { saveSessionState } from './session.js'
-import { classifyAuthState } from './state.js'
+import { authStateToLoginStatus, classifyAuthState } from './state.js'
 import type { AuthStateSignals } from './state.js'
 
 /**
@@ -61,25 +61,23 @@ const main = async (): Promise<number> => {
       return 2
     }
 
-    // ログイン状態を三値で判定する。未認証（sign_in へのリダイレクト・認証チャレンジの残存）は
-    // AUTH_REQUIRED、判定不能（本文取得失敗）は TEMPORARY_FAILURE として、いずれも保存しない（fail closed）。
+    // ログイン状態を三値で判定し、CLI の結果へ写す。未認証は AUTH_REQUIRED、
+    // 判定不能（本文取得失敗）は TEMPORARY_FAILURE として、いずれも保存しない（fail closed）。
     await page.goto(ME_HOME_URL, { waitUntil: 'domcontentloaded' })
     const authState = classifyAuthState(await collectAuthStateSignals(page))
-    if (authState === 'UNKNOWN') {
-      console.log('status=TEMPORARY_FAILURE')
+    const loginStatus = authStateToLoginStatus(authState)
+    if (loginStatus !== 'SESSION_SAVED') {
+      console.log(`status=${loginStatus}`)
       console.log(
-        'ログイン状態を確認できなかったため（本文を取得できない）、セッションは保存していません。',
+        loginStatus === 'AUTH_REQUIRED'
+          ? 'ログインを確認できなかったため、セッションは保存していません。'
+          : 'ログイン状態を確認できなかったため（本文を取得できない）、セッションは保存していません。',
       )
-      return 1
-    }
-    if (authState === 'AUTH_REQUIRED') {
-      console.log('status=AUTH_REQUIRED')
-      console.log('ログインを確認できなかったため、セッションは保存していません。')
-      return 2
+      return loginStatus === 'AUTH_REQUIRED' ? 2 : 1
     }
 
     saveSessionState(sessionFilePath, await context.storageState())
-    console.log('status=SESSION_SAVED')
+    console.log(`status=${loginStatus}`)
     console.log(`session ファイル: ${formatSessionPathForDisplay(sessionFilePath)}`)
     return 0
   } finally {

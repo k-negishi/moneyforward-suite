@@ -1,5 +1,5 @@
 /**
- * refresh CLI の引数解析・終了コード・使い方。
+ * refresh CLI の引数解析・終了コード・使い方・最終判定。
  * エントリポイント（refresh.ts）から切り離し、単体テストできるようにする。
  * 引数で URL / Selector / 操作を受け付けない（ADR-0010）。
  */
@@ -66,3 +66,14 @@ export const parseRefreshArgs = (argv: readonly string[]): RefreshOptions | null
 
   return { headless: mode !== 'headed', execute }
 }
+
+/**
+ * 一括更新の最終判定（純関数）。
+ * クリックできて、かつ受付（行の変化・進行中シグナルの出現）を確認できた場合のみ受理する。
+ * どちらかが欠ける場合は受理の根拠にしない（fail closed）。
+ */
+export const decideBulkStatus = (outcome: {
+  readonly clicked: boolean
+  readonly accepted: boolean
+}): 'REFRESH_ACCEPTED' | 'TEMPORARY_FAILURE' =>
+  outcome.clicked && outcome.accepted ? 'REFRESH_ACCEPTED' : 'TEMPORARY_FAILURE'

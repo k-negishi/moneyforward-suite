@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { EXIT_CODE_BY_STATUS, parseRefreshArgs } from '../src/spike/refresh-cli.js'
+import { EXIT_CODE_BY_STATUS, decideBulkStatus, parseRefreshArgs } from '../src/spike/refresh-cli.js'
 import type { SpikeStatus } from '../src/spike/refresh-cli.js'
 
 // CLI の引数と終了コードの契約を固定する（既定の反転・矛盾指定の見逃しを検出する）。
@@ -90,5 +90,16 @@ describe('EXIT_CODE_BY_STATUS', () => {
     for (const status of nonZeroStatuses) {
       expect(EXIT_CODE_BY_STATUS[status]).toBe(1)
     }
+  })
+})
+
+describe('decideBulkStatus', () => {
+  it.each([
+    [true, true, 'REFRESH_ACCEPTED'],
+    [true, false, 'TEMPORARY_FAILURE'],
+    [false, true, 'TEMPORARY_FAILURE'],
+    [false, false, 'TEMPORARY_FAILURE'],
+  ] as const)('clicked=%s accepted=%s → %s', (clicked, accepted, expected) => {
+    expect(decideBulkStatus({ clicked, accepted })).toBe(expected)
   })
 })

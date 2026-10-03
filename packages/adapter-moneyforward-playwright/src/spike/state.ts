@@ -1,4 +1,4 @@
-import { isAuthChallengeDetected } from './config.js'
+import { containsAuthChallenge } from './config.js'
 
 /**
  * spike CLI の判定に使う純関数（行変化と認証状態の分類）。
@@ -88,7 +88,9 @@ export const isRowSnapshotValid = (rows: readonly string[]): boolean =>
  * 新しく現れた行として変化に数える。行数の減少・0 件は再描画・デタッチによる行の欠落と
  * みなして無効な観測とする。失敗・否定形はマーカー単位で「クリック後にだけ現れた」場合のみ
  * 失敗として扱う（実機では認証失敗が残った口座など、クリック前から失敗表示の行が常設されるため。
- * 行に前からある失敗表示をクリックへの反応と誤認しない）。失敗の出現を検知した場合は
+ * 行に前からある失敗表示をクリックへの反応と誤認しない）。クリック前から失敗表示の行は、
+ * 文言が変化しても changedCount / inProgressAppeared の根拠にしない（失敗行の再描画等を
+ * 受理と誤認しない。fail closed）。失敗の出現を検知した場合は
  * 変化・出現の根拠にしない（fail closed）。空文字の行を含む観測（再描画・デタッチ中）は
  * 比較の前提を満たさないため valid=false とし、呼び出し側は判定に使わない。
  * 制限: 行テキストが時間で自然変動する場合（更新日時の自動更新等）、差分ベースの判定が
@@ -144,6 +146,10 @@ export const detectRowChanges = (
       continue
     }
 
+    // クリック前から失敗表示の行は、文言が変化しても受付の根拠にしない
+    // （失敗したままの行の再描画等を受理と誤認しない。fail closed）。
+    if (containsFailureMarker(normalizeText(before))) continue
+
     if (normalizeText(before) !== normalizeText(after)) changedCount += 1
     if (!hasInProgressSignal(before) && hasInProgressSignal(after)) inProgressAppeared = true
   }
@@ -167,12 +173,27 @@ export type AuthState = 'AUTHENTICATED' | 'AUTH_REQUIRED' | 'UNKNOWN'
 
 /**
  * 認証状態を分類する（純関数）。
- * sign_in へのリダイレクトと認証チャレンジの検知を AUTH_REQUIRED とする。
+ * sign_in へのリダイレクト、可視の認証入力欄、入力要求の文言のいずれかを検知したら AUTH_REQUIRED。
  * 本文テキストを取得できない場合は認証済みと見なさず、判定不能の UNKNOWN を返す（fail closed）。
+ * 入力欄の有無は本文の取得可否より先に評価する（本文が空でも入力欄があれば未認証と言い切れる）。
  */
 export const classifyAuthState = (signals: AuthStateSignals): AuthState => {
   // sign_in へのリダイレクトは、本文の取得可否によらず未認証と言い切れる。
   if (signals.isSignInUrl) return 'AUTH_REQUIRED'
+  if (signals.visibleChallengeInputCount > 0) return 'AUTH_REQUIRED'
   if (normalizeText(signals.visibleText).length === 0) return 'UNKNOWN'
-  return isAuthChallengeDetected(signals) ? 'AUTH_REQUIRED' : 'AUTHENTICATED'
+  return containsAuthChallenge(signals.visibleText) ? 'AUTH_REQUIRED' : 'AUTHENTICATED'
+}
+
+/** ログイン CLI が返し得る状態。 */
+export type LoginStatus = 'SESSION_SAVED' | 'AUTH_REQUIRED' | 'TEMPORARY_FAILURE'
+
+/**
+ * 認証状態をログイン CLI の結果へ写す（純関数）。
+ * 認証済みなら保存へ進み（SESSION_SAVED）、未認証は AUTH_REQUIRED、判定不能は
+ * TEMPORARY_FAILURE とする（未認証・判定不能はどちらも保存しない。fail closed）。
+ */
+export const authStateToLoginStatus = (authState: AuthState): LoginStatus => {
+  if (authState === 'AUTHENTICATED') return 'SESSION_SAVED'
+  return authState === 'AUTH_REQUIRED' ? 'AUTH_REQUIRED' : 'TEMPORARY_FAILURE'
 }

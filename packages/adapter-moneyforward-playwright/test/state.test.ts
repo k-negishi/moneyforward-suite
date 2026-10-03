@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ROW_REFRESH_SIGNAL_PROBES,
+  authStateToLoginStatus,
   classifyAuthState,
   detectRefreshSignals,
   detectRowChanges,
@@ -179,6 +180,33 @@ describe('detectRowChanges', () => {
     })
   })
 
+  it('クリック前から失敗表示の行は、文言が変化しても changedCount に寄与しない', () => {
+    const before = ['口座A 更新に失敗しました']
+    const after = ['口座A 更新に失敗しました（再試行）']
+
+    const evidence = detectRowChanges(before, after)
+    expect(evidence.changedCount).toBe(0)
+    expect(evidence.failureDetected).toBe(false)
+  })
+
+  it('クリック前から失敗表示の行に進行中シグナルが現れても受付の根拠にしない', () => {
+    const before = ['口座A 更新に失敗しました']
+    const after = ['口座A 更新に失敗しました 更新中']
+
+    const evidence = detectRowChanges(before, after)
+    expect(evidence.changedCount).toBe(0)
+    expect(evidence.inProgressAppeared).toBe(false)
+  })
+
+  it('失敗行を除外しても、非失敗行の変化だけで受付の根拠になる', () => {
+    const before = ['口座A 更新に失敗しました', '口座B 更新日時 2026/10/01 更新']
+    const after = ['口座A 更新に失敗しました（再試行）', '口座B 更新日時 2026/10/03 更新']
+
+    const evidence = detectRowChanges(before, after)
+    expect(evidence.changedCount).toBe(1)
+    expect(evidence.failureDetected).toBe(false)
+  })
+
   it('行が成功表示から失敗表示に変わったら failureDetected=true', () => {
     const before = ['口座A 更新日時 2026/10/01 更新']
     const after = ['口座A 取得に失敗しました']
@@ -306,6 +334,12 @@ describe('classifyAuthState', () => {
     ).toBe('AUTH_REQUIRED')
   })
 
+  it('本文が取得できなくても、可視の認証入力欄があれば AUTH_REQUIRED（判定不能より優先する）', () => {
+    expect(
+      classifyAuthState({ isSignInUrl: false, visibleText: '', visibleChallengeInputCount: 1 }),
+    ).toBe('AUTH_REQUIRED')
+  })
+
   it('チャレンジも判定不能も無ければ AUTHENTICATED', () => {
     expect(
       classifyAuthState({
@@ -314,5 +348,20 @@ describe('classifyAuthState', () => {
         visibleChallengeInputCount: 0,
       }),
     ).toBe('AUTHENTICATED')
+  })
+})
+
+describe('authStateToLoginStatus', () => {
+  it.each([
+    ['AUTHENTICATED', 'SESSION_SAVED'],
+    ['AUTH_REQUIRED', 'AUTH_REQUIRED'],
+    ['UNKNOWN', 'TEMPORARY_FAILURE'],
+  ] as const)('%s → %s', (authState, expected) => {
+    expect(authStateToLoginStatus(authState)).toBe(expected)
+  })
+
+  it('未認証・判定不能はどちらも保存へ進めない', () => {
+    expect(authStateToLoginStatus('AUTH_REQUIRED')).not.toBe('SESSION_SAVED')
+    expect(authStateToLoginStatus('UNKNOWN')).not.toBe('SESSION_SAVED')
   })
 })
