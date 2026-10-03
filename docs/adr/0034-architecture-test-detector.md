@@ -15,9 +15,10 @@ ADR-0022 で CI による境界検証（Architecture Test）を決めたが、�
 
 リポジトリ横断テスト（`tests/architecture.test.ts`・Vitest の `repo-policy` プロジェクト）に自作の純関数検出器を置き、`pnpm test:architecture` で実行する。CI では typecheck の後・全テストの前に独立ステップとして実行し、失敗工程として可視にする。
 
-- import 指定子は字句走査で抽出する（`from '...'`・`import '...'`・`import('...')`・`require('...')`）。コメント・文字列リテラル・正規表現リテラルの中の import 風の記述は依存として数えない（誤検出で CI を止めない）。
+- 走査対象は `apps/<name>/src` と `packages/<name>/src` の TypeScript（`.ts`・`.tsx`・`.mts`・`.cts`。宣言ファイルを含む）とする。import 指定子は字句走査で抽出する（`from '...'`・`import '...'`・`import('...')`・`require('...')`。補間（`${}`）を含まないテンプレートリテラルの指定子も、静的に決まるため文字列と同じく読み取る）。コメント・文字列リテラル・正規表現リテラルの中の import 風の記述は依存として数えない（誤検出で CI を止めない）。
 - パッケージ別の許可行列（`unitRules`）で、workspace package 間と外部パッケージの依存を判定する。Core は Node 組み込みと相対 import のみ、Adapter は閉じ込めた技術（Playwright・AWS SDK）まで、Application は Core・Security・Adapter 経由に限る。
 - 相対 import はパッケージ境界を越えられない（越える場合は workspace package 名で import する）。`apps/*` から別 Application の package への import も禁止する。
+- import 指定子に `.` / `..` のパスセグメントを含む場合は、許可行列の判定に通さず違反として報告する（`playwright/../@aws-sdk/...` のような、解決後に別パッケージを指す指定子による迂回を遮断する）。
 - 許可行列に未登録の unit（`apps/*`・`packages/*`）を検出したらテストを失敗させ、境界の追加を明示的にする。
 - 合成ソース文字列の fixture で、許可・禁止の各ケースと行番号の報告を回帰テストする。
 
@@ -26,7 +27,7 @@ ADR-0022 で CI による境界検証（Architecture Test）を決めたが、�
 - 依存の違反がレビュー以前に CI で止まり、違反した `file:line` と import 指定子が出力される。
 - 依存パッケージと設定ファイルが増えない。規則はリポジトリ固有の要求（相対越境・アプリ間・許可行列）に直接対応する。
 - 検出器の保守は自前になる。字句走査は TypeScript の未知の構文で誤検出・検出漏れを起こし得るため、fixture の回帰テストで検知し、必要なら検出器を更新する。
-- 変数に組み立てた指定子（`require(name)` 等）とテンプレートリテラルの `${}` の中の import は検出できない（検出漏れはレビューで補う）。
+- 変数に組み立てた指定子（`require(name)` 等）と、補間（`${}`）を含むテンプレートリテラルの指定子は検出できない（補間の無いテンプレートは静的指定子として検査する。検出漏れはレビューで補う）。
 - 新しい package・Application の追加時に `unitRules` の更新が必要になる（未登録はテスト失敗）。
 
 ## Alternatives considered

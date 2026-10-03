@@ -14,10 +14,13 @@ import { describe, expect, it } from 'vitest'
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
 /**
- * 検査対象。apps/<name>/src と packages/<name>/src の TypeScript のみを対象にし、
- * ビルド生成物（dist）とテスト（各 package の test/）は依存の検査対象にしない。
+ * 検査対象。apps/<name>/src と packages/<name>/src の TypeScript（.ts / .tsx / .mts / .cts）を
+ * 対象にし、ビルド生成物（dist）とテスト（各 package の test/）は依存の検査対象にしない。
+ * 宣言ファイル（.d.ts / .d.mts / .d.cts）も末尾が ts 系のため対象に含まれるが、src 配下の
+ * 宣言ファイルは型レベルの依存を持つため対象のままでよい（tsc の生成物は gitignore 済みの
+ * dist に出力され、このパターンには一致しない）。
  */
-const targetFilePattern = /^(?:apps|packages)\/[^/]+\/src\/.*\.ts$/
+const targetFilePattern = /^(?:apps|packages)\/[^/]+\/src\/.*\.(?:[cm]?ts|tsx)$/
 
 /** 依存を許可する単位（unit）。unit はリポジトリルートからの先頭 2 セグメントで、workspace package と対応する。 */
 interface UnitRule {
@@ -143,7 +146,8 @@ const isRegexLiteralStart = (recentTokens: readonly string[]): boolean => {
  * 正規表現リテラルの中の import 風の記述を依存として誤検出し、CI を不当に止める。
  * 走査は次の制限を持つ（誤検出を避ける側に倒し、検出漏れはレビューで補う）。
  * - 変数に組み立てた指定子（`require(name)` 等）は検出できない
- * - テンプレートリテラルの `${}` の中の import は検出しない
+ * - 補間（`${}`）を含むテンプレートリテラルの指定子は検出しない（補間の無いテンプレートは
+ *   静的に決まるため、文字列リテラルと同じく指定子として読み取る）
  */
 const extractSpecifierReferences = (source: string): SpecifierReference[] => {
   const references: SpecifierReference[] = []
@@ -165,7 +169,10 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
     while (index < source.length) {
       const char = source[index]
       if (char === '\\') {
-        value += source[index + 1] ?? ''
+        const escaped = source[index + 1] ?? ''
+        // エスケープが行継続（\ + 改行）のときは行番号を進める。
+        if (escaped === '\n') line += 1
+        value += escaped
         index += 2
         continue
       }
@@ -191,6 +198,7 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
     while (index < source.length) {
       const char = source[index]
       if (char === '\\') {
+        if (source[index + 1] === '\n') line += 1
         index += 2
         continue
       }
@@ -211,12 +219,12 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
     while (index < source.length) {
       const char = source[index]
       if (char === '\\') {
+        if (source[index + 1] === '\n') line += 1
         index += 2
         continue
       }
       if (char === '\n') {
-        // 正規表現は行を跨がない。乱れは行末で打ち切る。
-        line += 1
+        // 正規表現は行を跨がない。乱れは行末で打ち切る（改行は呼び出し元の走査が数える）。
         return
       }
       if (char === '[') inCharacterClass = true
@@ -232,12 +240,59 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
     while (index < source.length && /[a-z]/i.test(source[index])) index += 1
   }
 
+  /**
+   * テンプレートリテラルを読み、補間（`${}`）が無ければ文字列リテラルと同じく指定子として扱う。
+   * 補間を含む場合は値を静的に決められないため、記録せずに読み飛ばす。
+   */
+  const readTemplate = (): void => {
+    const startLine = line
+    index += 1
+
+    let value = ''
+    let hasInterpolation = false
+    while (index < source.length) {
+      const char = source[index]
+      if (char === '\\') {
+        const escaped = source[index + 1] ?? ''
+        // エスケープが行継続（\ + 改行）のときは行番号を進める。
+        if (escaped === '\n') line += 1
+        value += escaped
+        index += 2
+        continue
+      }
+      if (char === '`') {
+        index += 1
+        break
+      }
+      if (char === '\n') {
+        line += 1
+        value += char
+        index += 1
+        continue
+      }
+      if (char === '$' && source[index + 1] === '{') {
+        hasInterpolation = true
+        index += 2
+        skipInterpolation()
+        continue
+      }
+      value += char
+      index += 1
+    }
+
+    if (!hasInterpolation && isImportSpecifierContext(recentTokens)) {
+      references.push({ specifier: value, line: startLine })
+    }
+    pushToken(hasInterpolation ? 'template' : 'string')
+  }
+
   /** テンプレートリテラルを読み飛ばす。`${}` の中は再帰的に読み飛ばす。 */
   function skipTemplate(): void {
     index += 1
     while (index < source.length) {
       const char = source[index]
       if (char === '\\') {
+        if (source[index + 1] === '\n') line += 1
         index += 2
         continue
       }
@@ -313,8 +368,7 @@ const extractSpecifierReferences = (source: string): SpecifierReference[] => {
       continue
     }
     if (char === '`') {
-      skipTemplate()
-      pushToken('template')
+      readTemplate()
       continue
     }
     if (char === '/' && isRegexLiteralStart(recentTokens)) {
@@ -362,6 +416,14 @@ const findWorkspacePackage = (
 const isRelativeSpecifier = (specifier: string): boolean =>
   specifier === '.' || specifier === '..' || specifier.startsWith('./') || specifier.startsWith('../')
 
+/**
+ * bare import の指定子に `.` / `..` のパスセグメントを含むか。
+ * `playwright/../@aws-sdk/...` のような指定子は解決後に別パッケージを指すため、
+ * 許可行列の前方一致判定に通さず違反として報告する。
+ */
+const hasDotSegment = (specifier: string): boolean =>
+  specifier.split('/').some((segment) => segment === '.' || segment === '..')
+
 /** 相対 import が unit（パッケージ）の外へ出るかを判定する。 */
 const escapesUnit = (filePath: string, specifier: string): boolean => {
   const unit = unitOfPath(filePath)
@@ -400,6 +462,16 @@ const checkSource = (filePath: string, source: string): Violation[] => {
           reason: '相対 import がパッケージ境界を越えている（workspace package 名で import する）',
         })
       }
+      continue
+    }
+
+    if (hasDotSegment(specifier)) {
+      violations.push({
+        path: filePath,
+        line,
+        specifier,
+        reason: '指定子に `.` / `..` セグメントを含む（解決後の別パッケージへの迂回を防ぐため許可しない）',
+      })
       continue
     }
 
@@ -447,7 +519,9 @@ const checkSource = (filePath: string, source: string): Violation[] => {
         path: filePath,
         line,
         specifier,
-        reason: disallowedExternalReason(unit),
+        reason: specifier.startsWith('@mf-suite/')
+          ? '未登録の workspace package への依存（unitRules への追加が必要）'
+          : disallowedExternalReason(unit),
       })
     }
   }
@@ -556,6 +630,30 @@ describe('依存規則の回帰テスト（合成ソース）', () => {
       expected: [],
     },
     {
+      name: 'Core: テンプレートリテラルの中の import 風の記述は文脈が無ければ検出しない',
+      filePath: 'packages/core/src/fixture.ts',
+      source: "const note = `import { chromium } from 'playwright'`",
+      expected: [],
+    },
+    {
+      name: 'Core: 補間の無いテンプレートリテラルの指定子は検出する',
+      filePath: 'packages/core/src/fixture.mts',
+      source: 'const loaded = await import(`playwright`)\n',
+      expected: ['playwright'],
+    },
+    {
+      name: 'Core: 補間を含むテンプレートリテラルの指定子は検出しない（既知の限界）',
+      filePath: 'packages/core/src/fixture.ts',
+      source: 'const loaded = await import(`./generated/${name}.js`)',
+      expected: [],
+    },
+    {
+      name: 'Adapter(Playwright): 補間の無いテンプレートリテラルの playwright は許可する',
+      filePath: 'packages/adapter-moneyforward-playwright/src/fixture.ts',
+      source: 'const loaded = await import(`playwright`)',
+      expected: [],
+    },
+    {
       name: 'Security: Core への依存と Node 組み込みは許可する',
       filePath: 'packages/security/src/fixture.ts',
       source:
@@ -598,6 +696,42 @@ describe('依存規則の回帰テスト（合成ソース）', () => {
       name: '複数行の from と副作用 import も抽出できる',
       filePath: 'packages/adapter-moneyforward-playwright/src/fixture.ts',
       source: "import {\n  chromium,\n} from 'playwright'\nimport './setup.js'\n",
+      expected: [],
+    },
+    {
+      name: 'Application（.tsx）: 外部 SDK の直接依存を検出する',
+      filePath: 'apps/automation/src/component.tsx',
+      source: "import { chromium } from 'playwright'",
+      expected: ['playwright'],
+    },
+    {
+      name: 'Core（.cts）: 禁止依存を検出する',
+      filePath: 'packages/core/src/fixture.cts',
+      source: "import { remote } from 'appium'",
+      expected: ['appium'],
+    },
+    {
+      name: 'Adapter(Playwright): `..` セグメントで AWS SDK へ迂回する指定子を検出する',
+      filePath: 'packages/adapter-moneyforward-playwright/src/fixture.ts',
+      source: "import { SecretsManagerClient } from 'playwright/../@aws-sdk/client-secrets-manager'",
+      expected: ['playwright/../@aws-sdk/client-secrets-manager'],
+    },
+    {
+      name: 'Adapter(AWS): `..` セグメントで playwright へ迂回する指定子を検出する',
+      filePath: 'packages/adapter-aws/src/fixture.ts',
+      source: "import { chromium } from '@aws-sdk/../playwright'",
+      expected: ['@aws-sdk/../playwright'],
+    },
+    {
+      name: 'Adapter(AWS): `.` セグメントを含む指定子も許可判定に通さない',
+      filePath: 'packages/adapter-aws/src/fixture.ts',
+      source: "import { SecretsManagerClient } from '@aws-sdk/./client-secrets-manager'",
+      expected: ['@aws-sdk/./client-secrets-manager'],
+    },
+    {
+      name: '相対 import の `..` は親ディレクトリ参照として扱う（越境しなければ許可）',
+      filePath: 'packages/core/src/fixture.ts',
+      source: "import { x } from '../ports/result.js'",
       expected: [],
     },
     {
@@ -740,5 +874,58 @@ describe('依存規則の回帰テスト（合成ソース）', () => {
     expect(checkSource('packages/core/src/fixture.ts', source)).toMatchObject([
       { line: 5, specifier: 'playwright' },
     ])
+  })
+
+  it('正規表現が行末で途切れても行番号がずれない', () => {
+    const source = ['const re = /abc', "import { chromium } from 'playwright'"].join('\n')
+
+    expect(checkSource('packages/core/src/fixture.ts', source)).toMatchObject([
+      { line: 2, specifier: 'playwright' },
+    ])
+  })
+
+  it('行継続（\\ + 改行）を含む文字列の後でも行番号がずれない', () => {
+    const source = ["const text = 'a\\", "b'", "import { chromium } from 'playwright'"].join('\n')
+
+    expect(checkSource('packages/core/src/fixture.ts', source)).toMatchObject([
+      { line: 3, specifier: 'playwright' },
+    ])
+  })
+
+  it('行継続（\\ + 改行）を含むテンプレートの後でも行番号がずれない', () => {
+    const source = ['const t = `a\\', 'b`', "import { chromium } from 'playwright'"].join('\n')
+
+    expect(checkSource('packages/core/src/fixture.ts', source)).toMatchObject([
+      { line: 3, specifier: 'playwright' },
+    ])
+  })
+
+  it('未登録の workspace package は unitRules への追加が必要と報告する', () => {
+    const violations = checkSource(
+      'apps/automation/src/fixture.ts',
+      "import type { Worker } from '@mf-suite/paypay-worker'",
+    )
+
+    expect(violations).toMatchObject([
+      {
+        specifier: '@mf-suite/paypay-worker',
+        reason: '未登録の workspace package への依存（unitRules への追加が必要）',
+      },
+    ])
+  })
+
+  it.each([
+    ['apps/automation/src/handler.ts', true],
+    ['apps/automation/src/component.tsx', true],
+    ['apps/automation/src/nested/component.tsx', true],
+    ['packages/core/src/index.mts', true],
+    ['packages/core/src/index.cts', true],
+    ['packages/core/src/ambient.d.ts', true],
+    ['apps/automation/test/handler.ts', false],
+    ['packages/core/dist/index.js', false],
+    ['apps/automation/src/handler.js', false],
+    ['tests/repo-policy.test.ts', false],
+  ] as const)('検査対象の判定: %s → %s', (path, expected) => {
+    expect(targetFilePattern.test(path)).toBe(expected)
   })
 })
