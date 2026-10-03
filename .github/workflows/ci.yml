@@ -54,6 +54,8 @@ jobs:
       # lint の診断には noSecrets の候補文字列が含まれ得るため、生の出力はログへ流さず、
       # レポートを一時ファイル（ランナー内で消える。Artifact として保存しない）へ書き出し、
       # 失敗時はルール ID と対象ファイルの位置だけを表示する（Minimal Logging）。
+      # 位置は診断 JSON の location.path と location.start.line から取る。path が
+      # オブジェクト（{ file }）の形になっても表示が壊れないように両対応にする。
       - name: lint を実行する
         run: |
           status=0
@@ -63,7 +65,7 @@ jobs:
             exit 0
           fi
           echo 'lint が失敗しました。ルール ID と対象ファイルの位置だけを表示します。'
-          jq -r '.diagnostics[] | "\(.category) \(.location.path // "?"):\(.location.start.line // "?")"' \
+          jq -r '.diagnostics[] | "\(.category) \((.location.path | if type == "object" then .file else . end) // "?"):\(.location.start.line // "?")"' \
             "$RUNNER_TEMP/biome-diagnostics.json"
           exit "$status"
 
@@ -92,6 +94,12 @@ jobs:
       # 違反時は検出した import の file:line と指定子が出力される。
       - name: 依存境界（Architecture Test）を検証する
         run: pnpm test:architecture
+
+      # リポジトリ横断のポリシー検査（保存 Action・コメント規約・Biome 設定）を、全テストの
+      # 実行（pnpm test）とは別のステップでも必ず実行する。テストの対象が変わっても検査が
+      # 走らなかったり、対象 0 件のまま成功したりする事故を防ぐ。
+      - name: リポジトリ横断のポリシー検査を実行する
+        run: pnpm test:repo-policy
 
       # 失敗時は Vitest の出力に project 名（@mf-suite/* と repo-policy）が出る。
       - name: 全 workspace とリポジトリ横断のテストを実行する

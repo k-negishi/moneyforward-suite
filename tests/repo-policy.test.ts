@@ -91,18 +91,32 @@ const forbiddenPatterns: readonly RegExp[] = [
  * 網羅できず、検査をすり抜けられるため。パースに失敗したファイルは違反として扱う
  * （fail closed。解釈できない YAML を「違反なし」と読み飛ばすと、検査が黙って弱まる）。
  *
- * 残る限界: `run:` ステップからのネットワーク送出（YAML の `uses` を介さない参照）と、
- * 保存 Action を呼ぶ別名・ラッパー Action（未知の Action）は検出できない。レビューで補う。
+ * 残る限界: `run:` ステップからのネットワーク送出（YAML の `uses` を介さない参照）、
+ * 保存 Action を呼ぶ別名・ラッパー Action（未知の Action）、外部リポジトリの reusable
+ * workflow（`uses: org/repo/...@ref`。参照先の定義がこのリポジトリに無く、経由する保存
+ * Action を静的に追えない）は検出できない。レビューで補う。
  */
 const forbiddenActionName = 'upload-artifact'
 
-/** Action 定義（ワークフロー・composite action）として検査する拡張子（`.github/` 配下）。 */
+/** Action 定義として検査する YAML の拡張子（`.github/` 配下）。 */
 const actionDefinitionExtensions = new Set(['.yaml', '.yml'])
 
-/** Action 定義ファイルのパスか（`.github/` 配下の YAML だけを YAML として検査する）。 */
-const isActionDefinitionPath = (path: string): boolean =>
-  path.startsWith(githubDirectoryPrefix) &&
-  actionDefinitionExtensions.has(extname(path).toLowerCase())
+/** Action 定義のファイル名（`.github/` の外にも置かれる）。 */
+const actionDefinitionFileNames = new Set(['action.yml', 'action.yaml'])
+
+/**
+ * Action 定義ファイルのパスか。`.github/` 配下の YAML（ワークフロー・composite action）に
+ * 加えて、ファイル名が `action.yml` / `action.yaml` のファイル（リポジトリ直下等に置かれる
+ * Action 定義）も対象にする。保存 Action の参照は、置き場によらず検査する。
+ */
+const isActionDefinitionPath = (path: string): boolean => {
+  const baseName = path.slice(path.lastIndexOf('/') + 1).toLowerCase()
+  return (
+    actionDefinitionFileNames.has(baseName) ||
+    (path.startsWith(githubDirectoryPrefix) &&
+      actionDefinitionExtensions.has(extname(path).toLowerCase()))
+  )
+}
 
 interface Violation {
   readonly path: string
@@ -276,15 +290,19 @@ const locateForbiddenActionUses = (contents: string): ViolationLocation[] => {
 
     if (isMap(node)) {
       for (const pair of node.items) {
-        if (isScalar(pair.key) && pair.key.value === 'uses') {
+        // キーもエイリアス（`*k`）なら解決してから判定する（`&k uses` + `*k` の形を塞ぐ）。
+        const rawKey = pair.key
+        const key = resolveAliases(rawKey)
+        if (isScalar(key) && key.value === 'uses') {
           const value = resolveAliases(pair.value)
           if (
             isScalar(value) &&
             typeof value.value === 'string' &&
             value.value.toLowerCase().includes(forbiddenActionName)
           ) {
-            // 行番号はキーの位置（`uses` を書いた行）を指す。位置が取れない場合だけ省略する。
-            const range = pair.key.range
+            // 行番号はキーを書いた位置（エイリアスなら `*k` の行）を指す。
+            // 位置が取れない場合だけ省略する。
+            const range = isScalar(rawKey) || isAlias(rawKey) ? rawKey.range : undefined
             violations.push({ line: range ? lineCounter.linePos(range[0]).line : undefined })
           }
         }
@@ -586,6 +604,23 @@ describe('保存 Action の検査（YAML パース・誤検出と検出漏れの
       workflowWithStep(['?', '        uses', '        : actions/upload-artifact@v4']),
       [8],
     ],
+    ['パースできない YAML（閉じない flow マッピング）', workflowWithStep(['uses: {']), [8]],
+    [
+      'キーがエイリアス（別行のアンカーを参照）',
+      [
+        'name: probe',
+        'on: workflow_dispatch',
+        'env:',
+        '  KEY: &k uses',
+        'jobs:',
+        '  build:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - *k : actions/upload-artifact@v4',
+        '',
+      ].join('\n'),
+      [9],
+    ],
   ]
 
   it.each(detectedCases)('%s → 検出する', (name, definition, expectedLines) => {
@@ -622,6 +657,21 @@ describe('保存 Action の検査（YAML パース・誤検出と検出漏れの
         '    runs-on: ubuntu-latest',
         '    steps:',
         '      - uses: *ref',
+        '',
+      ].join('\n'),
+    ],
+    [
+      'キーがエイリアスでも保存 Action 以外は対象外',
+      [
+        'name: probe',
+        'on: workflow_dispatch',
+        'env:',
+        '  KEY: &k uses',
+        'jobs:',
+        '  build:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - *k : actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
         '',
       ].join('\n'),
     ],
@@ -738,6 +788,9 @@ describe('biome.jsonc の overrides の対象ファイル', () => {
     // overrides が空・読み取りの崩れで「一致 0 件」の検査自体が無意味になる事故を防ぐ。
     expect(overrides.length, 'biome.jsonc の overrides を読み取れませんでした').toBeGreaterThan(0)
 
+    // 一致判定は Node の `matchesGlob`（experimental）による近似で、Biome 本体の glob
+    // 実装そのものではない。目的は「パターンが実在ファイルに 1 件も一致しない（移動・改名で
+    // override が無効化された）」ことの検出であり、一致の厳密な再現ではない。
     // 追跡ファイルを基準にする（未追跡の一時ファイルが偶然一致する状態を「一致あり」と
     // 見なさない）。
     const files = listGitFiles('--cached')
