@@ -48,22 +48,40 @@ const readErrorName = (error: unknown): string | null => {
 }
 
 /**
- * Secrets Manager の取得失敗を Domain Error の分類へ写像する。
+ * Secrets Manager の取得時に投げられ得る例外を Domain Error の分類へ写像する。
+ * 判定は例外の name だけで行う（message は使わない。message には Secret を含み得るため、
+ * 分類の根拠としても結果の内容としても自由文字列を持ち込まない）。
  *
  * - ResourceNotFoundException → SECRET_NOT_FOUND（Secret の欠如）
- * - AccessDeniedException → ACCESS_DENIED（権限不足）
- * - それ以外（Throttling・ネットワーク・プロトコル例外・不明）→ TEMPORARY_FAILURE
+ * - AccessDeniedException・UnrecognizedClientException・InvalidSignatureException・
+ *   ExpiredTokenException・KMSAccessDeniedException → ACCESS_DENIED
+ *   （権限または資格情報の不足・失効。資格情報を直さない限り同じ呼び出しの再試行では回復しない）
+ * - InvalidParameterException・InvalidRequestException・PreconditionNotMetException・
+ *   DecryptionFailure・EncryptionFailure → SECRET_INVALID
+ *   （Secret や KMS の構成・状態の問題。再試行では回復しない）
+ * - 上記以外（ThrottlingException・LimitExceededException・ネットワーク断・未知の例外）
+ *   → TEMPORARY_FAILURE（再試行可）
  *
- * 不明な失敗を TEMPORARY_FAILURE（再試行可）へ倒すのは、判定不能を成功と見なさず、
- * 一時障害の可能性を再試行へ回す fail closed の側（分類の対応表に従う）。
- * name ではなく message で判定すると、自由文字列を分類の根拠にしてしまうため使わない。
+ * 未知の例外を再試行可へ倒すのは、判定不能を恒久失敗として捨てず、回復し得る失敗を再試行へ
+ * 回す側に倒す方針による（ADR-0033 が語彙外の値を再試行可の UNKNOWN へ丸めるのと同じ思想）。
+ * 恒久的に回復しない失敗は上のとおり明示的に分類し、再試行の対象から外す。
  */
 const classifyFailure = (error: unknown): ErrorCode => {
   switch (readErrorName(error)) {
     case 'ResourceNotFoundException':
       return 'SECRET_NOT_FOUND'
     case 'AccessDeniedException':
+    case 'UnrecognizedClientException':
+    case 'InvalidSignatureException':
+    case 'ExpiredTokenException':
+    case 'KMSAccessDeniedException':
       return 'ACCESS_DENIED'
+    case 'InvalidParameterException':
+    case 'InvalidRequestException':
+    case 'PreconditionNotMetException':
+    case 'DecryptionFailure':
+    case 'EncryptionFailure':
+      return 'SECRET_INVALID'
     default:
       return 'TEMPORARY_FAILURE'
   }
@@ -84,7 +102,8 @@ const readSecretString = (response: unknown): string | null => {
  * SecretStorePort の AWS Secrets Manager 実装（ADR-0013）。
  *
  * Application ごとに分離した 1 つの Secret を、設定で指定された物理名（名前または ARN）で
- * 取得する。Secret の値はログ・エラーへ出さず、戻り値としてだけ返す。
+ * 取得する。Secret の値はログ・エラーへ出さず、戻り値としてだけ返す。成功時の値は実行時に
+ * 生の文字列のまま持ち回る（ブランドはファントム）ため、呼び出し側も直列化・ログ出力しない。
  *
  * 失敗は Domain Error の分類（SECRET_NOT_FOUND / SECRET_INVALID / ACCESS_DENIED /
  * TEMPORARY_FAILURE）へ写像する。例外は境界で捕捉し、呼び出し側が fail closed で
@@ -98,12 +117,15 @@ export class AwsSecretsManagerSecretStore implements SecretStorePort {
   constructor(config: AwsSecretsManagerSecretStoreConfig) {
     // 設定の欠落は取得時ではなく生成時に停止する（fail fast。空の識別子で呼び出すと
     // 分類不能なサービス例外になり、構成の問題として扱えないため）。
-    if (config.secretName.trim().length === 0) {
+    // 前後の空白は転記時の混入として取り除き、取り除いた結果が空の場合も同じ検証で停止する
+    // （前後の空白だけの値で起動し、実行時に ResourceNotFound となる事故を防ぐ）。
+    const secretName = config.secretName.trim()
+    if (secretName.length === 0) {
       throw new Error('Secrets Manager の Secret 名（または ARN）が空です')
     }
 
     this.secretId = config.secretId
-    this.secretName = config.secretName
+    this.secretName = secretName
     this.client = config.client
   }
 
