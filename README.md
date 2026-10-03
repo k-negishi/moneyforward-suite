@@ -64,6 +64,30 @@ pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:refresh --execute 
 - Playwright のブラウザ取得は `pnpm --filter @mf-suite/adapter-moneyforward-playwright exec playwright install chromium` で行う（spike の実行前に必要）。
 - CLI を実行する script（例: `spike:refresh`）は `pnpm build` を前置する（ビルド忘れで古い `dist` を実行する事故を防ぐ。実装は PoC 実装で行う）。
 
+## 開発補助（Claude Code）
+
+実装は Claude Code を併用して進める。以下のプラグインと MCP サーバーは**開発時の支援のためのもので、プロダクトの機能ではなく、ビルド・テスト・実行時の依存にも含まれない**（無効化しても `pnpm build` / `pnpm test` は成立する）。
+
+### プラグイン
+
+`.claude/settings.json` の `enabledPlugins` で、`claude-plugins-official` マーケットプレイスの2つを有効にしている。
+
+| プラグイン | 用途 |
+|---|---|
+| `typescript-lsp` | TS/JS の Language Server 連携（定義ジャンプ・参照検索・エラー検査）。利用には `typescript-language-server` と `typescript` のグローバル導入が必要 |
+| `security-guidance` | 編集時・応答終了時・コミット時のセキュリティレビュー（injection / XSS / SSRF / Secret 混入などの脆弱性クラス） |
+
+### MCP サーバー
+
+`.mcp.json` で定義する。有効化は Claude Code の確認に応じて `.claude/settings.local.json` に記録され、このファイルは git 管理外（開発者ごとの設定）。
+
+| サーバー | 用途 |
+|---|---|
+| `playwright` | ブラウザ操作の補助。隔離プロファイル（`--isolated`）・画像応答の抑制・出力先 `.playwright-mcp`（git 管理外）を指定する。機密ページ（認証後・金融情報を含む画面）には使わない（[機密情報の取り扱い](#機密情報の取り扱い)） |
+| `aws-knowledge` | AWS 公式ドキュメント・リージョン情報の参照 |
+
+いずれもローカルへの事前導入は不要（`playwright` は `npx` 実行で、バージョンは `.mcp.json` で固定する。`aws-knowledge` は AWS 提供のリモートサーバーへ HTTP 接続する）。
+
 ## 機密情報の取り扱い
 
 - 認証セッション等のローカル専用ファイルは `.local/` に置く。`.local/`・`.env*`（`.env.example` を除く）・Playwright の Artifact（`test-results/` / `playwright-report/` / `blob-report/`）は git 管理外。機密ページ（認証後・金融情報を含む画面）に対して Playwright MCP の filename 保存は使わない。
