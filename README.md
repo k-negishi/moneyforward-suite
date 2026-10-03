@@ -39,16 +39,6 @@ corepack を使っていない環境では 1 行目は不要。`pnpm-lock.yaml` 
 | `pnpm clean` | ビルド生成物（`dist` / `*.tsbuildinfo`）を削除する |
 | `pnpm install --frozen-lockfile` | lockfile を変更せずに再現インストールする（CI 想定） |
 
-### MoneyForward ME 操作の暫定 CLI（spike）
-
-実機で認証セッションの保存と、金融機関のデータ一括更新の実行・受付確認を試すための暫定 CLI。先に `pnpm --filter @mf-suite/adapter-moneyforward-playwright exec playwright install chromium` でブラウザを取得しておく。
-
-```sh
-pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:login   # headed で手動ログインし、セッションを .local/ に保存する
-pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:refresh   # 一括更新コントロールと対象行の特定を確認する（既定は headless・読み取りのみ）
-pnpm --filter @mf-suite/adapter-moneyforward-playwright spike:refresh --execute   # 一括更新を実行し、行ごとの変化（更新日時など）から受付を確認する（pnpm では引数を直接渡す）
-```
-
 ### 手動ログインとセッションの再生成（session CLI）
 
 MoneyForward ME の操作には認証済みセッションが必要になる。Password はシステムが扱わず、ローカルで手動ログインして生成したセッションを再利用する。セッション失効時は自動復旧せず、AUTH_REQUIRED として停止する。先に `pnpm --filter @mf-suite/adapter-moneyforward-playwright exec playwright install chromium` でブラウザを取得しておく。
@@ -88,9 +78,41 @@ pnpm --filter @mf-suite/adapter-moneyforward-playwright session:check   # 保存
 - `session:login` が `status=AUTH_REQUIRED` で終わる: ログインが完了していない（Enter 前の中断・EOF）、または認証チャレンジの検知。ブラウザでログインを完了してから再実行する。
 - `session:check` が `TEMPORARY_FAILURE` になる: セッションの有効性を判定できていない。ネットワークと MoneyForward ME の状態を確認して再実行する。
 
+### 金融機関のデータ一括更新の実行（refresh-accounts CLI）
+
+保存済みのセッションを使って、金融機関のデータ一括更新を本番と同じ Use Case で 1 回だけ実行する。先に上記の session CLI の手順でセッションを生成しておく（ブラウザの取得も同じ手順の前提）。
+
+```sh
+pnpm refresh-accounts             # headless で実行する（既定）
+pnpm refresh-accounts --headed    # ブラウザを表示して実行する
+```
+
+引数は `--headed` / `--headless` だけを受け付ける。未知のフラグ・値付き・重複・位置引数は拒否し、終了コード 64 で停止する（URL・Selector・JavaScript・Shell Command・ID / Password は受け付けない）。セッションの保存先は session CLI と同じ（`MF_SESSION_FILE` の絶対パス、既定は `.local/`）。再試行・待機は CLI では行わない（実行基盤の責務）。
+
+stdout は `status=...`（失敗時は `errorCode=...` を続ける）の 1 行だけとし、stderr には使い方の案内（不正入力時）と構造化ログ（allow list の field だけの JSON 行）を出す。構造化ログは Use Case を実行した場合の開始と完了の 2 行で、Use Case に到達しない失敗（`SESSION_MISSING` / `SESSION_INVALID` / `INVALID_JOB`）では出力しない。stdout を契約の専有に保ち、ログと結果が混ざらないようにする。Cookie・セッショントークン・金融明細はどの出力にも含めない。状態と終了コードは次のとおり。
+
+| status | errorCode | 終了コード | 意味と対処 |
+|---|---|---|---|
+| `SUCCESS` | — | 0 | 一括更新の受付を確認できた（失敗の観測なし。完了確認は行わない） |
+| `PARTIAL_SUCCESS` | — | 4 | 受付は確認できたが、一部の行で失敗を観測した。手動で画面の状態を確認する |
+| `NO_REFRESH_NEEDED` | — | 3 | 更新不要（現時点では判定条件が未確認のため発火しない） |
+| `FAILURE` | `AUTH_REQUIRED` | 2 | 処理中にセッション失効を検知。`session:login` で作り直す |
+| `FAILURE` | `SESSION_MISSING` | 2 | セッションが無い。`session:login` で生成する |
+| `FAILURE` | `SESSION_INVALID` | 2 | セッションが破損、または他ユーザーが読める権限。`session:login` で作り直す |
+| `FAILURE` | `INVALID_JOB` | 64 | 不正入力（引数の誤り、または受理されない Job 入力）。使い方を確認する |
+| `FAILURE` | その他（`TEMPORARY_FAILURE` / `REFRESH_REJECTED` / `REFRESH_NOT_ACCEPTED` / `TARGET_NOT_FOUND` / `TARGET_AMBIGUOUS` / `UNKNOWN` など） | 1 | 一時障害・拒否・判定不能。errorCode を見て対処する |
+
+トラブルシュート:
+
+- `status=FAILURE errorCode=TEMPORARY_FAILURE` になる: 一時障害、または判定不能。時間を置いて再実行し、改善しなければネットワークと MoneyForward ME の状態を確認する。
+- `status=FAILURE errorCode=REFRESH_REJECTED` になる: MoneyForward 側が明示的に拒否・失敗した（再試行しない）。手動で画面の状態を確認する。
+- `status=FAILURE errorCode=REFRESH_NOT_ACCEPTED` / `TARGET_NOT_FOUND` / `TARGET_AMBIGUOUS` になる: 受付・対象を確認できなかった。手動で画面を確認して再実行する。
+- `status=FAILURE errorCode=UNKNOWN` になる: 判定不能（設定エラーなどの例外を含む）。`MF_SESSION_FILE` の指定（絶対パス）を確認する。
+- 終了コード 64 になる: 引数の誤り。`--headed` / `--headless` 以外は受け付けない。
+
 ## workspace 構成
 
-- `apps/automation`（`@mf-suite/automation`）— 実行エントリ。handler / composition-root / job-router / cli は PoC 実装で追加する
+- `apps/automation`（`@mf-suite/automation`）— 実行エントリ。Lambda のハンドラー（job-router / handler / composition-root）と refresh-accounts CLI（Driving Adapter）を置く
 - `packages/core`（`@mf-suite/core`）— Domain / Application / Ports。Framework / Runtime 非依存
 - `packages/security`（`@mf-suite/security`）— allow-list ロガー・認証セッション管理
 - `packages/adapter-moneyforward-playwright`（`@mf-suite/adapter-moneyforward-playwright`）— MoneyForwardPort の Playwright 実装
@@ -103,8 +125,8 @@ pnpm --filter @mf-suite/adapter-moneyforward-playwright session:check   # 保存
 - 相対 import には `.js` 拡張子を付ける（ESM / NodeNext の解決規則）。package 間 import を追加したら、`tsconfig.json` の `references` と `tsconfig.check.json` の `paths`（tsconfig ファイルの位置基準）も更新する。
 - `packages/core` は Framework / Runtime 非依存。playwright / aws-sdk / appium 等を持ち込まない（[ADR-0006](docs/adr/0006-core-runtime-independence.md)）。
 - テストは各 package の `test/`（`src/` の外）に置く。ビルドに含まれず `dist` へ出ず、型検査は `tsconfig.check.json` が対象にする。`@mf-suite/*` の package 名 import は、テスト実行時に `vitest.config.ts` の alias で各 package の `src/index.ts` へ解決される（テストはビルド不要）。リポジトリ横断の検査は `tests/`（workspace package ではない）に置き、vitest の `repo-policy` プロジェクトで実行され、型検査は `tests/tsconfig.check.json` が対象にする。
-- Playwright のブラウザ取得は `pnpm --filter @mf-suite/adapter-moneyforward-playwright exec playwright install chromium` で行う（Adapter のブラウザテストと spike の実行前に必要）。テストは合成 HTML のみを描画し、実サービスへは接続しない。
-- CLI を実行する script（例: `spike:refresh`）は `pnpm build` を前置する（ビルド忘れで古い `dist` を実行する事故を防ぐ。実装は PoC 実装で行う）。
+- Playwright のブラウザ取得は `pnpm --filter @mf-suite/adapter-moneyforward-playwright exec playwright install chromium` で行う（Adapter のブラウザテストと CLI の実行前に必要）。テストは合成 HTML のみを描画し、実サービスへは接続しない。
+- CLI を実行する script（例: `refresh-accounts`）は `pnpm build` を前置する（ビルド忘れで古い `dist` を実行する事故を防ぐ）。ルートからは `pnpm -C` で対象 package へ委譲する（`pnpm --filter` の再帰実行は失敗時の終了コードを 1 に潰すため、終了コードを契約に持つ CLI では使わない）。
 
 ## 開発補助（Claude Code）
 

@@ -7,6 +7,7 @@ import {
 import { PlaywrightMoneyForwardAdapter } from '@mf-suite/adapter-moneyforward-playwright'
 import type { LoggerPort, MoneyForwardPort, SecretStorePort } from '@mf-suite/core'
 import { RefreshAccountsUseCase } from '@mf-suite/core'
+import type { LogSink } from '@mf-suite/security'
 import { createStructuredLogger, resolveSessionFilePath } from '@mf-suite/security'
 import type { AutomationHandler, JobExecutors } from './handler.js'
 import { createAutomationHandler } from './handler.js'
@@ -41,6 +42,11 @@ export interface LocalAutomationOptions {
   readonly headless: boolean
   /** セッションファイルのパス。省略時は security の既定解決（リポジトリ内の .local/ 配下）に任せる。 */
   readonly sessionFilePath?: string
+  /**
+   * 構造化ログの出力先。省略時は security の既定（1 イベント 1 行で stdout）。
+   * ローカル CLI は stdout を status 行の専有に保つため stderr を渡す（ログと契約の混在を防ぐ）。
+   */
+  readonly logSink?: LogSink
 }
 
 /** AWS 実行の設定。Secret の識別子はコードへ固定せず、呼び出し側（エントリ）が設定から注入する。 */
@@ -65,9 +71,19 @@ const createExecutors = (moneyForward: MoneyForwardPort, logger: LoggerPort): Jo
   'refresh-accounts': createUseCase(moneyForward, logger),
 })
 
-/** ログは allow-list の構造化ロガー（security）を使い、Application 名を束ねる。 */
-const createLogger = (overrides: AutomationOverrides): LoggerPort =>
-  overrides.logger ?? createStructuredLogger({ application: 'automation' })
+/**
+ * ログは allow-list の構造化ロガー（security）を使い、Application 名を束ねる。
+ * 出力先は実行環境の差として logSink で選び、省略時は security の既定（stdout。AWS / Lambda の
+ * ログ収集を変えない）にする。overrides.logger はテスト用の完全差し替えとして優先する。
+ */
+const createLogger = (overrides: AutomationOverrides, logSink: LogSink | undefined): LoggerPort => {
+  if (overrides.logger !== undefined) {
+    return overrides.logger
+  }
+  return logSink === undefined
+    ? createStructuredLogger({ application: 'automation' })
+    : createStructuredLogger({ application: 'automation', sink: logSink })
+}
 
 /** AWS 実行用の Session Provider を、Secret Store（adapter-aws）から組み立てる。 */
 const createAwsSessionProvider = (
@@ -102,7 +118,7 @@ export const createLocalAutomation = (
     createSessionFileProvider(options.sessionFilePath ?? resolveSessionFilePath())
 
   return createAutomationHandler({
-    executors: createExecutors(moneyForward, createLogger(overrides)),
+    executors: createExecutors(moneyForward, createLogger(overrides, options.logSink)),
     sessionProvider,
   })
 }
@@ -121,7 +137,8 @@ export const createAwsAutomation = (
   const sessionProvider = overrides.sessionProvider ?? createAwsSessionProvider(options, overrides)
 
   return createAutomationHandler({
-    executors: createExecutors(moneyForward, createLogger(overrides)),
+    // AWS は既定の stdout（CloudWatch Logs が収集する）のまま、sink の差し替え口を作らない。
+    executors: createExecutors(moneyForward, createLogger(overrides, undefined)),
     sessionProvider,
   })
 }

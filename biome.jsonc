@@ -197,7 +197,7 @@
         // 設定ファイルは override で許可する（ツールが既定 export を要求するため）。
         "noDefaultExport": "error",
         // process.env の直接参照を禁止する（設定の読み取りは境界モジュールに閉じる）。
-        // spike の設定モジュールとテストは override で許可する。
+        // テストは override で許可する。
         "noProcessEnv": "error",
         // 三項演算子自体は禁止しない（入れ子のみ noNestedTernary で禁止する）。
         "noTernary": "off",
@@ -216,7 +216,7 @@
         "useAwait": "error",
         // Promise の入れ子を検出する（then の中の then は順序と失敗の追跡を難しくする）。
         "noNestedPromises": "error",
-        // console の使用を検出する。CLI（spike）は標準出力が契約のため override で許可する。
+        // console の使用を検出する。CLI は標準出力が契約のため override で許可する。
         "noConsole": "error",
         // 空のブロックを検出する（意図的な空はコメントで示す。エラーの握りつぶしを防ぐ）。
         "noEmptyBlockStatements": "error",
@@ -276,14 +276,14 @@
       }
     },
     {
-      // CLI の標準出力は契約（status の 1 行。成功時は保存先の表示 1 行を追加。
+      // CLI の標準出力は契約（status の 1 行。失敗時は errorCode を続ける。
       // Secret・金融データは出さない）のため許可する。許可は実行エントリ（console を出力関数として
-      // 組み立てる層）に限り、判定・写像を置く session-cli.ts へは広げない。
+      // 組み立てる層）に限り、判定・写像を置くファイル（session-cli.ts / refresh-accounts-cli.ts）へは広げない。
+      // 出力の配線と sink は console ではなく process の stream へ直接書くため、この許可に含めない。
       "includes": [
-        "packages/adapter-moneyforward-playwright/src/spike/login.ts",
-        "packages/adapter-moneyforward-playwright/src/spike/refresh.ts",
         "packages/adapter-moneyforward-playwright/src/cli/session-login.ts",
-        "packages/adapter-moneyforward-playwright/src/cli/session-check.ts"
+        "packages/adapter-moneyforward-playwright/src/cli/session-check.ts",
+        "apps/automation/src/cli/refresh-accounts.ts"
       ],
       "linter": {
         "rules": {
