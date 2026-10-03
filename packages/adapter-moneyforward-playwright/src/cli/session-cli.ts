@@ -8,7 +8,8 @@ import type { LoginSessionResult } from '../moneyforward/page-client.js'
  * セッション CLI（session:login / session:check）の状態語彙・終了コード・固定文言と実行本体。
  * エントリポイントから切り離して依存を注入可能にし、実ブラウザ・実サービスへ触れずに
  * 出力と終了コードの契約を単体テストで固定できるようにする。
- * 出力の契約: stdout は `status=...` の 1 行（成功時は保存先の表示 1 行を追加）、stderr は再生成案内などの固定文言。
+ * 出力の契約: stdout は `status=...` の 1 行（成功時は保存先の表示 1 行を追加）と、対話中（session:login）の
+ * 人間向けの案内・プロンプト。stderr は再生成案内などの固定文言。
  * Cookie・セッショントークン・URL・例外内容は出力しない（セッションの値は表示用に整形したパスのみ）。
  */
 
@@ -95,10 +96,10 @@ export const SESSION_REGENERATE_GUIDANCE =
 
 /**
  * セッションファイルの設定エラーの案内（stderr・固定文言）。
- * MF_SESSION_FILE の相対パス指定など、実行前に直せる設定の問題を可変値なしで案内する。
+ * パス解決の失敗（MF_SESSION_FILE の相対パス指定・リポジトリルートの特定失敗など）を
+ * 可変値なしの一般形で案内する。
  */
-export const SESSION_CONFIG_ERROR_GUIDANCE =
-  'セッションファイルの設定を確認してください: MF_SESSION_FILE を指定する場合は絶対パスにしてください'
+export const SESSION_CONFIG_ERROR_GUIDANCE = 'セッションの保存先パスの指定を確認してください'
 
 /** セッションファイルのパス解決と出力の依存（両 CLI で共通）。 */
 export interface SessionPathDependencies {
