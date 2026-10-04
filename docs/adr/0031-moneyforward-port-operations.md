@@ -1,6 +1,6 @@
 # 0031. MoneyForwardPort の操作を verifySession と refreshAccounts の 2 つに絞る
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-03
 
 ## Context

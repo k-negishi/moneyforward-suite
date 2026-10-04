@@ -1,6 +1,6 @@
 # 0032. 認証セッションと Secret の値を opaque 型で表す
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-03
 
 ## Context
