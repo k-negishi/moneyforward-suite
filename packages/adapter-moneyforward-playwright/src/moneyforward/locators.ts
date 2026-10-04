@@ -32,8 +32,20 @@ export const ROW_UPDATE_CONTROL_NAME_PATTERN = /^更新$/
 export interface RefreshTimeouts {
   /** ページ遷移・既定のナビゲーションのタイムアウト。 */
   readonly navigationMs: number
-  /** 対象要素の出現待ち・クリックのタイムアウト。 */
+  /**
+   * 対象要素の出現待ちのタイムアウト（要素が無い場合の判定をこの時間で確定する）。
+   * テストは「不在」を短時間で確定させるために短縮する。
+   */
   readonly targetWaitMs: number
+  /**
+   * 一括更新コントロールのクリックのタイムアウト。
+   * 出現待ちと作業の性質が異なるため、 targetWaitMs とは別の値にする。
+   * クリックはブラウザ側で可視・安定（連続するフレームでの位置不変）・イベント受信を確認して
+   * から入力イベントを送るため、要素が存在していても負荷時には複数回の往復とフレーム待ちを伴う。
+   * 出現待ちの値を流用すると、テストが出現待ちを短縮した場合にクリックの予算まで過小になり、
+   * 操作可能な要素でも一時障害として誤判定する（負荷時に実際に起きた）。
+   */
+  readonly clickMs: number
   /**
    * 一括更新のクリック後、行の変化（受付）を待つ最大時間。
    * MF は混雑時に更新を後で処理することがあり、受付の表示が遅れるため長めに取る。
@@ -49,6 +61,8 @@ export interface RefreshTimeouts {
 export const DEFAULT_REFRESH_TIMEOUTS: RefreshTimeouts = {
   navigationMs: 30_000,
   targetWaitMs: 10_000,
+  // クリックは従来 targetWaitMs（10 秒）で待っていた。既定は変えず、値を独立させる。
+  clickMs: 10_000,
   rowChangeMs: 180_000,
   pollIntervalMs: 1000,
   snapshotIntervalMs: 200,

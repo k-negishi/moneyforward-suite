@@ -145,8 +145,11 @@ export const executeRefreshOnAccountsPage = async (
 
   // 金融機関のデータ一括更新を実行する。
   // クリックには明示タイムアウトを付ける（要素の消滅等で既定の長い待機に引きずられない）。
+  // 出現待ちの targetWaitMs ではなくクリック専用の clickMs を使う。actionability の確認は
+  // ブラウザ側の往復とフレーム待ちを伴うため、出現待ちを短縮したテストで同じ値を使うと、
+  // 操作可能な要素でも予算不足になり一時障害へ誤って倒れる。
   const clicked = await bulkControl
-    .click({ timeout: timeouts.targetWaitMs })
+    .click({ timeout: timeouts.clickMs })
     .then(() => true)
     .catch(() => false)
   // クリックできなければ状態変化を確認できないため、受付としない（fail closed）。
