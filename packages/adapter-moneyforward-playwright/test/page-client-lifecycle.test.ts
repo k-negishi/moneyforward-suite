@@ -66,6 +66,8 @@ const TEST_OPTIONS = {
   timeouts: {
     navigationMs: 5000,
     targetWaitMs: 150,
+    // クリックの actionability は負荷時に 150ms を超え得るため、クリック専用の予算を使う。
+    clickMs: 1000,
     rowChangeMs: 400,
     pollIntervalMs: 40,
     snapshotIntervalMs: 60,

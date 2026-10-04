@@ -36,6 +36,11 @@ import {
 const TEST_TIMEOUTS = resolveTimeouts({
   navigationMs: 5000,
   targetWaitMs: 150,
+  // クリックの actionability はブラウザ側の往復とフレームの安定確認を伴うため、出現待ち（150ms）
+  // ではなくクリック専用の値を使う。負荷時に 150ms では正常な要素でもタイムアウトし得る
+  // （クリックだけが一時障害へ倒れる）。実測で負荷時のクリックは最大 200ms 未満のため、
+  // 十分な余裕を取りつつ、クリックが失敗するテスト（disabled の一括更新）も待ち時間を抑える。
+  clickMs: 1000,
   rowChangeMs: 400,
   pollIntervalMs: 40,
   snapshotIntervalMs: 60,
@@ -357,6 +362,29 @@ describe('executeRefreshOnAccountsPage（実 chromium・合成 HTML）', () => {
     expect(outcome).toEqual({ status: 'TEMPORARY_FAILURE' })
   })
 
+  it('クリックの予算は出現待ちと独立している（clickMs だけがクリックを制限する）', async () => {
+    const { page, prepared } = await prepareForRefresh(
+      accountsHtml({
+        bulk: 1,
+        rows: [accountRow('口座A', '2026/10/01')],
+        script: AUTH_LOST_SCRIPT,
+      }),
+    )
+
+    // クリックにだけ極端に短い予算を与える。actionability の確認は連続するフレームをまたぐため
+    // 1ms では完了せず、クリックはタイムアウトする。実装が出現待ち（150ms）をクリックにも
+    // 使っていれば、クリックは成功して認証失効の観測（OBSERVED / authLost）になる。
+    // この差で、クリックの予算が出現待ちと共用されていないことを固定する。
+    const outcome = await executeRefreshOnAccountsPage(
+      prepared,
+      resolveTimeouts({ ...TEST_TIMEOUTS, clickMs: 1 }),
+    )
+
+    expect(outcome).toEqual({ status: 'TEMPORARY_FAILURE' })
+    // クリックがページへ届いていないこと（合成スクリプトが記録する）も確認する。
+    expect(await page.locator('body').getAttribute('data-clicked')).toBeNull()
+  })
+
   it('クリック後に認証が失われたら authLost として観測する', async () => {
     const { prepared } = await prepareForRefresh(
       accountsHtml({
@@ -393,11 +421,8 @@ describe('executeRefreshOnAccountsPage（実 chromium・合成 HTML）', () => {
 
     // 失効の確認間隔（数ポーリング）を迎えるまで観測が続くよう、期限を少し延ばす（実時間は待たない）。
     const observingTimeouts = resolveTimeouts({
-      navigationMs: 5000,
-      targetWaitMs: 150,
+      ...TEST_TIMEOUTS,
       rowChangeMs: 1500,
-      pollIntervalMs: 40,
-      snapshotIntervalMs: 60,
     })
 
     const outcome = await executeRefreshOnAccountsPage(prepared, observingTimeouts)
