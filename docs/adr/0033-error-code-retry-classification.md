@@ -1,6 +1,6 @@
 # 0033. ErrorCode の語彙と再試行可否を 1 つの対応表で定義する
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-03
 
 ## Context

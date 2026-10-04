@@ -53,8 +53,8 @@
 | [0028](0028-refresh-accounts-initial-job.md) | 初期 Job を refresh-accounts（金融機関の一括更新と Suica 更新）とする | Superseded by ADR-0029 | 2026-10-03 |
 | [0029](0029-exclude-mobile-suica.md) | モバイル Suica を対象から外し、初期 Job を金融機関のデータ一括更新に限定する | Accepted | 2026-10-03 |
 | [0030](0030-proposal-staging.md) | 企画段階の文書を proposals に置き、決着時に ADR へ蒸留する | Accepted | 2026-10-03 |
-| [0031](0031-moneyforward-port-operations.md) | MoneyForwardPort の操作を verifySession と refreshAccounts の 2 つに絞る | Proposed | 2026-10-03 |
-| [0032](0032-opaque-secret-values.md) | 認証セッションと Secret の値を opaque 型で表す | Proposed | 2026-10-03 |
-| [0033](0033-error-code-retry-classification.md) | ErrorCode の語彙と再試行可否を 1 つの対応表で定義する | Proposed | 2026-10-03 |
-| [0034](0034-architecture-test-detector.md) | Architecture Test を自作の import 検出器で実装する | Proposed | 2026-10-03 |
+| [0031](0031-moneyforward-port-operations.md) | MoneyForwardPort の操作を verifySession と refreshAccounts の 2 つに絞る | Accepted | 2026-10-03 |
+| [0032](0032-opaque-secret-values.md) | 認証セッションと Secret の値を opaque 型で表す | Accepted | 2026-10-03 |
+| [0033](0033-error-code-retry-classification.md) | ErrorCode の語彙と再試行可否を 1 つの対応表で定義する | Accepted | 2026-10-03 |
+| [0034](0034-architecture-test-detector.md) | Architecture Test を自作の import 検出器で実装する | Accepted | 2026-10-03 |
 | [0035](0035-lint-format-with-biome.md) | lint と format に Biome を採用する | Accepted | 2026-10-03 |

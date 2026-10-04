@@ -1,6 +1,6 @@
 # 0034. Architecture Test を自作の import 検出器で実装する
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-03
 
 ## Context
