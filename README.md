@@ -45,8 +45,8 @@ corepack を使っていない環境では 1 行目は不要。`pnpm-lock.yaml` 
 MoneyForward ME の操作には認証済みセッションが必要になる。Password はシステムが扱わず、ローカルで手動ログインして生成したセッションを再利用する。セッション失効時は自動復旧せず、AUTH_REQUIRED として停止する。先に `pnpm --filter @mf-suite/adapter-moneyforward-playwright exec playwright install chromium` でブラウザを取得しておく。
 
 ```sh
-pnpm --filter @mf-suite/adapter-moneyforward-playwright session:login   # headed で手動ログインし、セッションを保存する
-pnpm --filter @mf-suite/adapter-moneyforward-playwright session:check   # 保存済みセッションの有効性を確認する（headless）
+pnpm -C packages/adapter-moneyforward-playwright session:login   # headed で手動ログインし、セッションを保存する
+pnpm -C packages/adapter-moneyforward-playwright session:check   # 保存済みセッションの有効性を確認する（headless）
 ```
 
 `session:login` は headed ブラウザでログイン画面を開く。CAPTCHA・ワンタイムパスワード・新端末確認は自動回避しないため、ユーザー自身で対応し、完了後にターミナルで Enter を押す。認証済みと確認できた場合だけセッションを保存し、確認できない場合は保存せず `status=AUTH_REQUIRED` で停止する（終了コード 2）。
@@ -82,6 +82,8 @@ pnpm --filter @mf-suite/adapter-moneyforward-playwright session:check   # 保存
 ### 金融機関のデータ一括更新の実行（refresh-accounts CLI）
 
 保存済みのセッションを使って、金融機関のデータ一括更新を本番と同じ Use Case で 1 回だけ実行する。先に上記の session CLI の手順でセッションを生成しておく（ブラウザの取得も同じ手順の前提）。
+
+実セッションでの検証手順は [docs/runbook-local-e2e.md](docs/runbook-local-e2e.md) を参照する。
 
 ```sh
 pnpm refresh-accounts             # headless で実行する（既定）
